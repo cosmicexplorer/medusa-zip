@@ -7,3 +7,4 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+zip = { git = "https://github.com/cosmicexplorer/zip", rev = "21a20584bc9e05dfa4f3c5b0bc420a1389fae2c3" }
