@@ -14,7 +14,10 @@ A library/binary for parallel zip creation. See discussion in https://github.com
 1. [ ] Use `mmap` or something else to page to disk if the intermediate `ZipFile` objects get too large.
 2. [ ] See whether sections of a zip file spanning multiple file entries can be copied over with memcpy or something else with low overhead. If so, try splitting up the sorted list of file paths into chunks, creating an intermediate zip for each chunk, then copying over the contents of each chunked zip with that bulk copy method.
 3. [ ] See whether zip files can be created without sorting the entries somehow.
-    - *possibly*. See https://docs.python.org/3/library/zipimport.html and https://peps.python.org/pep-0273/, although we may not even need to care about zip importing if pex usually unzips everything anyway! In that case, we will simply want to ensure that pex can unzip everything correctly.
+    - It seems like `zipimport` will convert module paths to file names and scan the zip directly, so as long as it unzips properly with `zipfile`, we should be good (?)!
+
+## Compatibility
+We mainly need compatibility with [`zipfile`](https://docs.python.org/3/library/zipfile.html) and [`zipimport`](https://docs.python.org/3/library/zipimport.html) (see https://github.com/pantsbuild/pex/issues/2158#issuecomment-1599348047). Also see [the `zipimport` PEP](https://peps.python.org/pep-0273/).
 
 # License
 [Apache v2](./LICENSE).
