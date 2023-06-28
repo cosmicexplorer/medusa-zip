@@ -52,7 +52,7 @@ use tokio::{io::AsyncReadExt, task};
 use zip::{result::ZipError, write::FileOptions, ZipArchive, ZipWriter};
 
 use std::cmp;
-use std::io::{Cursor, Seek, Write};
+use std::io::{Cursor, Read, Seek, Write};
 use std::path::PathBuf;
 
 #[derive(Debug, Display, Error)]
@@ -209,7 +209,6 @@ impl MedusaZip {
     /* TODO: consider async-zip crate at https://docs.rs/async_zip/latest/async_zip/ as well! */
     let output_zip = task::spawn_blocking(move || {
       let mut output = Cursor::new(Vec::new());
-
       {
         let mut out_zip = ZipWriter::new(&mut output);
         let options = FileOptions::default();
@@ -259,3 +258,26 @@ impl MedusaZip {
     Ok(returned_path)
   }
 }
+
+/* #[derive(Debug, Display, Error)] */
+/* pub enum MedusaCrawlError { */
+/*   /// i/o error: {0} */
+/*   Io(#[from] std::io::Error), */
+/* } */
+
+/* pub struct MedusaCrawl { */
+/*   pub paths_to_crawl: Vec<PathBuf>, */
+/* } */
+
+/* impl MedusaCrawl { */
+/*   pub async fn crawl_paths(self, output_path: PathBuf) -> Result<MedusaZip, MedusaCrawlError> { */
+
+/*   } */
+/* } */
+
+/* #[cfg(test)] */
+/* mod test { */
+/*   use super::*; */
+
+/*   /\* use proptest::{prelude::*, strategy::Strategy}; *\/ */
+/* } */
