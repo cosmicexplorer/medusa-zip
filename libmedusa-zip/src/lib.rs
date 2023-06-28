@@ -45,17 +45,26 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
+use displaydoc::Display;
+use thiserror::Error;
 use zip;
 
-pub fn add(left: usize, right: usize) -> usize { left + right }
+use std::io;
+use std::path::PathBuf;
 
-#[cfg(test)]
-mod tests {
-  use super::*;
+#[derive(Debug, Display, Error)]
+pub enum MedusaZipError {
+  /// i/o error: {0}
+  Io(#[from] io::Error),
+}
 
-  #[test]
-  fn it_works() {
-    let result = add(2, 2);
-    assert_eq!(result, 4);
+pub struct MedusaZip {
+  pub input_paths: Vec<PathBuf>,
+  pub output_path: PathBuf,
+}
+
+impl MedusaZip {
+  pub async fn zip(self) -> Result<PathBuf, MedusaZipError> {
+    Ok(self.output_path)
   }
 }
