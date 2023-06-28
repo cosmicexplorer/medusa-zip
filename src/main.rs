@@ -47,6 +47,31 @@
 
 use libmedusa_zip;
 
-fn main() {
-  println!("Hello, world!");
+use zip::{result::ZipError, write::FileOptions, ZipArchive, ZipWriter};
+
+use std::fs::OpenOptions;
+use std::io::Write;
+
+fn main() -> Result<(), ZipError> {
+  let mut archive = OpenOptions::new()
+    .write(true)
+    .create(true)
+    .truncate(true)
+    .open("asdf.zip")?;
+
+  {
+    let mut zip = ZipWriter::new(&mut archive);
+    let options = FileOptions::default();
+
+    zip.start_file("bsdf.txt", options)?;
+    zip.write_all(b"bsdf\n")?;
+
+    zip.start_file("asdf.txt", options)?;
+    zip.write_all(b"asdf\n")?;
+
+    zip.finish()?;
+  }
+
+  archive.sync_all()?;
+  Ok(())
 }

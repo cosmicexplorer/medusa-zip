@@ -1,20 +1,21 @@
 [package]
-name = "medusa-zip"
-version = "0.0.0"
-authors = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
-edition = "2021"
+name                    = "medusa-zip"
+version                 = "0.0.0"
+authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
+edition                 = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libmedusa-zip = { path = "./libmedusa-zip" }
+libmedusa-zip           = { path = "./libmedusa-zip" }
+zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "21a20584bc9e05dfa4f3c5b0bc420a1389fae2c3" }
 
 [workspace]
-members = [
+members                 = [
     ".",
     "./libmedusa-zip",
 ]
-default-members = [
+default-members         = [
     ".",
     "./libmedusa-zip",
 ]
