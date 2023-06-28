@@ -49,7 +49,7 @@ use displaydoc::Display;
 use futures::future::try_join_all;
 use thiserror::Error;
 use tokio::{io::AsyncReadExt, task};
-use zip::{result::ZipError, write::FileOptions, ZipArchive, ZipWriter};
+use zip::{self, result::ZipError, ZipArchive, ZipWriter};
 
 use std::cmp;
 use std::io::{Cursor, Read, Seek, Write};
@@ -77,6 +77,30 @@ pub enum MedusaZipError {
   Join(#[from] task::JoinError),
   /// zip format error: {0}
   ZipFormat(#[from] MedusaZipFormatError),
+}
+
+#[derive(Copy, Clone)]
+pub enum Reproducibility {
+  Reproducible,
+  CurrentTime,
+}
+
+impl Reproducibility {
+  pub fn zip_options(self) -> zip::write::FileOptions {
+    match self {
+      Reproducibility::CurrentTime => zip::write::FileOptions::default(),
+      Reproducibility::Reproducible => {
+        let time = zip::DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0)
+          .expect("zero date should be valid");
+        zip::write::FileOptions::default().last_modified_time(time)
+      },
+    }
+  }
+}
+
+#[derive(Copy, Clone)]
+pub struct MedusaZipOptions {
+  pub reproducibility: Reproducibility,
 }
 
 #[derive(PartialEq, Eq)]
@@ -126,10 +150,15 @@ impl IntermediateZipCollection {
     dir_components
   }
 
-  pub fn write_zip<W: Write + Seek>(self, w: W) -> Result<(), MedusaZipError> {
+  pub fn write_zip<W: Write + Seek>(
+    self,
+    medusa_zip_options: MedusaZipOptions,
+    w: W,
+  ) -> Result<(), MedusaZipError> {
     let Self(mut intermediate_zips) = self;
     let mut output_zip = ZipWriter::new(w);
-    let options = FileOptions::default();
+    let MedusaZipOptions { reproducibility } = medusa_zip_options;
+    let zip_options = reproducibility.zip_options();
 
     /* Sort the resulting files so we can expect them to (mostly) be an inorder directory traversal.
      * Directories with names less than top-level files will be sorted above those top-level files,
@@ -168,7 +197,7 @@ impl IntermediateZipCollection {
           let cur_intermediate_components = &current_directory_components[..=final_component_index];
           assert!(cur_intermediate_components.len() > 0);
           let cur_intermediate_directory: String = cur_intermediate_components.join("/");
-          output_zip.add_directory(&cur_intermediate_directory, options)?;
+          output_zip.add_directory(&cur_intermediate_directory, zip_options)?;
         }
       }
       /* Set the "previous" dir components to the components of the current entry. */
@@ -190,14 +219,17 @@ impl IntermediateZipCollection {
 pub struct MedusaZip {
   pub input_paths: Vec<(PathBuf, String)>,
   pub output_path: PathBuf,
+  pub options: MedusaZipOptions,
 }
 
 impl MedusaZip {
   async fn zip_single(
     input_path: PathBuf,
     output_name: String,
+    medusa_zip_options: MedusaZipOptions,
   ) -> Result<IntermediateSingleZip, MedusaZipError> {
     let mut input_file_contents = Vec::new();
+    let MedusaZipOptions { reproducibility } = medusa_zip_options;
     tokio::fs::OpenOptions::new()
       .read(true)
       .open(&input_path)
@@ -205,15 +237,16 @@ impl MedusaZip {
       .read_to_end(&mut input_file_contents)
       .await?;
 
+    let zip_options = reproducibility.zip_options();
+
     let name = output_name.clone();
     /* TODO: consider async-zip crate at https://docs.rs/async_zip/latest/async_zip/ as well! */
     let output_zip = task::spawn_blocking(move || {
       let mut output = Cursor::new(Vec::new());
       {
         let mut out_zip = ZipWriter::new(&mut output);
-        let options = FileOptions::default();
 
-        out_zip.start_file(&output_name, options)?;
+        out_zip.start_file(&output_name, zip_options)?;
         out_zip.write_all(&input_file_contents)?;
 
         out_zip.finish()?;
@@ -232,12 +265,13 @@ impl MedusaZip {
     let Self {
       input_paths,
       output_path,
+      options,
     } = self;
 
     let intermediate_zips: Vec<IntermediateSingleZip> = try_join_all(
       input_paths
         .into_iter()
-        .map(|(input_path, output_name)| Self::zip_single(input_path, output_name)),
+        .map(|(input_path, output_name)| Self::zip_single(input_path, output_name, options)),
     )
     .await?;
     let intermediate_zips = IntermediateZipCollection(intermediate_zips);
@@ -250,7 +284,7 @@ impl MedusaZip {
         .truncate(true)
         .open(&output_path)?;
 
-      intermediate_zips.write_zip(output_file)?;
+      intermediate_zips.write_zip(options, output_file)?;
 
       Ok::<(), MedusaZipError>(())
     });

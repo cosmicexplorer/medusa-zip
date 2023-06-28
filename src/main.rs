@@ -45,7 +45,7 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-use libmedusa_zip::{MedusaZip, MedusaZipError};
+use libmedusa_zip::{MedusaZip, MedusaZipError, MedusaZipOptions, Reproducibility};
 
 use std::path::PathBuf;
 
@@ -96,6 +96,9 @@ async fn main() -> Result<(), MedusaZipError> {
       (PathBuf::from("tmp/x/b.txt"), "x/b.txt".to_string()),
     ],
     output_path: PathBuf::from("asdf2.zip"),
+    options: MedusaZipOptions {
+      reproducibility: Reproducibility::Reproducible,
+    },
   };
   let ret = zip_spec.zip().await?;
   println!("ret = {}", ret.display());
