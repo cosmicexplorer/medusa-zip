@@ -46,25 +46,202 @@
 #![allow(clippy::mutex_atomic)]
 
 use displaydoc::Display;
+use futures::future::try_join_all;
 use thiserror::Error;
-use zip;
+use tokio::{
+  io::{AsyncReadExt, AsyncWriteExt},
+  task,
+};
+use zip::{result::ZipError, write::FileOptions, ZipArchive, ZipWriter};
 
-use std::io;
-use std::path::PathBuf;
+use std::cmp;
+use std::io::{Cursor, Read, Seek, Write};
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Display, Error)]
+pub enum MedusaZipFormatError {
+  /// name is empty
+  NameIsEmpty,
+  /// name starts with '/': {0}
+  NameStartsWithSlash(String),
+  /// name ends with '/': {0}
+  NameEndsWithSlash(String),
+}
 
 #[derive(Debug, Display, Error)]
 pub enum MedusaZipError {
   /// i/o error: {0}
-  Io(#[from] io::Error),
+  Io(#[from] std::io::Error),
+  /// zip error: {0}
+  Zip(#[from] ZipError),
+  /// join error: {0}
+  Join(#[from] task::JoinError),
+  /// zip format error: {0}
+  ZipFormat(#[from] MedusaZipFormatError),
 }
 
 pub struct MedusaZip {
-  pub input_paths: Vec<PathBuf>,
+  pub input_paths: Vec<(PathBuf, String)>,
   pub output_path: PathBuf,
 }
 
+struct IntermediateSingleZip {
+  pub name: String,
+  pub single_member_archive: Vec<u8>,
+}
+
+struct IntermediateZipCollection(pub Vec<IntermediateSingleZip>);
+
+impl IntermediateZipCollection {
+  fn validate_name(name: &str) -> Result<(), MedusaZipFormatError> {
+    if name.is_empty() {
+      Err(MedusaZipFormatError::NameIsEmpty)
+    } else if name.starts_with('/') {
+      /* We won't produce any non-relative paths. */
+      Err(MedusaZipFormatError::NameStartsWithSlash(name.to_string()))
+    } else if name.ends_with('/') {
+      /* We only enter file names. */
+      Err(MedusaZipFormatError::NameEndsWithSlash(name.to_string()))
+    } else {
+      Ok(())
+    }
+  }
+
+  fn split_directory_components(name: &str) -> Vec<&str> {
+    let mut dir_components: Vec<&str> = name.split('/')
+        /* Discard // components: interpret them as single slashes. */
+        .filter(|c| !c.is_empty())
+        .collect();
+    /* Discard the file name itself. */
+    dir_components
+      .pop()
+      .expect("a split should always be non-empty");
+
+    dir_components
+  }
+
+  pub fn write_zip<W: Write + Seek>(self, w: W) -> Result<(), MedusaZipError> {
+    let Self(mut intermediate_zips) = self;
+    let mut output_zip = ZipWriter::new(w);
+    let options = FileOptions::default();
+
+    /* Sort the resulting files so we can expect them to be an inorder directory traversal. */
+    intermediate_zips.sort_by_cached_key(|iz| iz.name.clone());
+
+    /* Loop over each entry and write it to the output zip. */
+    let mut previous_directory_components: Vec<&str> = Vec::new();
+    for IntermediateSingleZip {
+      name,
+      single_member_archive,
+    } in intermediate_zips.iter()
+    {
+      Self::validate_name(name)?;
+
+      /* Split into directory components so we can add directory entries before any files from that
+       * directory. */
+      let current_directory_components = Self::split_directory_components(name);
+
+      /* Find the directory components shared between the previous and next entries. */
+      let mut shared_components: usize = 0;
+      for i in 0..cmp::min(
+        previous_directory_components.len(),
+        current_directory_components.len(),
+      ) {
+        if previous_directory_components[i] != current_directory_components[i] {
+          break;
+        }
+        shared_components += 1;
+      }
+      /* If all components are shared, then we don't need to introduce any new directories. */
+      if shared_components < current_directory_components.len() {
+        for final_component_index in shared_components..current_directory_components.len() {
+          /* Otherwise, we introduce a new directory for each new dir component of the current
+           * entry. */
+          let cur_intermediate_directory: String =
+            current_directory_components[..final_component_index].join("/");
+          output_zip.add_directory(&cur_intermediate_directory, options)?;
+        }
+      }
+      /* Set the "previous" dir components to the components of the current entry. */
+      previous_directory_components = current_directory_components;
+
+      /* Finally we can just write the actual file now! */
+      let mut single_member_zip = ZipArchive::new(Cursor::new(single_member_archive))?;
+      /* TODO: can we use .by_index_raw(0) instead? */
+      let member = single_member_zip.by_name(&name)?;
+      output_zip.raw_copy_file(member);
+    }
+
+    output_zip.finish()?;
+
+    Ok(())
+  }
+}
+
 impl MedusaZip {
+  async fn zip_single(
+    input_path: PathBuf,
+    output_name: String,
+  ) -> Result<IntermediateSingleZip, MedusaZipError> {
+    let mut input_file_contents = Vec::new();
+    tokio::fs::OpenOptions::new()
+      .read(true)
+      .open(&input_path)
+      .await?
+      .read_to_end(&mut input_file_contents)
+      .await?;
+
+    let name = output_name.clone();
+    /* TODO: consider async-zip crate at https://docs.rs/async_zip/latest/async_zip/ as well! */
+    let output_zip = task::spawn_blocking(move || {
+      let mut output = Cursor::new(Vec::new());
+
+      {
+        let mut out_zip = ZipWriter::new(&mut output);
+        let options = FileOptions::default();
+
+        out_zip.start_file(&output_name, options)?;
+        out_zip.write_all(&input_file_contents)?;
+
+        out_zip.finish()?;
+      }
+      Ok::<Vec<u8>, MedusaZipError>(output.into_inner())
+    })
+    .await??;
+
+    Ok(IntermediateSingleZip {
+      name,
+      single_member_archive: output_zip,
+    })
+  }
+
   pub async fn zip(self) -> Result<PathBuf, MedusaZipError> {
-    Ok(self.output_path)
+    let Self {
+      input_paths,
+      output_path,
+    } = self;
+
+    let intermediate_zips: Vec<IntermediateSingleZip> = try_join_all(
+      input_paths
+        .into_iter()
+        .map(|(input_path, output_name)| Self::zip_single(input_path, output_name)),
+    )
+    .await?;
+    let intermediate_zips = IntermediateZipCollection(intermediate_zips);
+
+    let returned_path = output_path.clone();
+    task::spawn_blocking(move || {
+      let mut output_file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&output_path)?;
+
+      intermediate_zips.write_zip(output_file)?;
+
+      Ok::<(), MedusaZipError>(())
+    });
+
+    Ok(returned_path)
   }
 }

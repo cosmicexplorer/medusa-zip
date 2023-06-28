@@ -69,6 +69,10 @@ fn main() -> Result<(), ZipError> {
     zip.start_file("asdf.txt", options)?;
     zip.write_all(b"asdf\n")?;
 
+    zip.add_directory("a", options)?;
+    zip.start_file("a/b.txt", options)?;
+    zip.write_all(b"ab\n")?;
+
     zip.finish()?;
   }
 
