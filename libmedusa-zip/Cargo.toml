@@ -1,5 +1,5 @@
 [package]
-name = "medusa-zip"
+name = "libmedusa-zip"
 version = "0.0.0"
 authors = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 edition = "2021"
@@ -7,14 +7,3 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libmedusa-zip = { path = "./libmedusa-zip" }
-
-[workspace]
-members = [
-    ".",
-    "./libmedusa-zip",
-]
-default-members = [
-    ".",
-    "./libmedusa-zip",
-]
