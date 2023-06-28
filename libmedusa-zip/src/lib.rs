@@ -79,9 +79,22 @@ pub enum MedusaZipError {
   ZipFormat(#[from] MedusaZipFormatError),
 }
 
+#[derive(PartialEq, Eq)]
 struct IntermediateSingleZip {
   pub name: String,
   pub single_member_archive: Vec<u8>,
+}
+
+impl cmp::PartialOrd for IntermediateSingleZip {
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+    self.name.partial_cmp(&other.name)
+  }
+}
+
+impl cmp::Ord for IntermediateSingleZip {
+  fn cmp(&self, other: &Self) -> cmp::Ordering {
+    self.name.cmp(&other.name)
+  }
 }
 
 struct IntermediateZipCollection(pub Vec<IntermediateSingleZip>);
@@ -118,8 +131,10 @@ impl IntermediateZipCollection {
     let mut output_zip = ZipWriter::new(w);
     let options = FileOptions::default();
 
-    /* Sort the resulting files so we can expect them to be an inorder directory traversal. */
-    intermediate_zips.sort_by_cached_key(|iz| iz.name.clone());
+    /* Sort the resulting files so we can expect them to (mostly) be an inorder directory traversal.
+     * Directories with names less than top-level files will be sorted above those top-level files,
+     * which matches the behavior of python zipfile. */
+    intermediate_zips.sort_unstable();
 
     /* Loop over each entry and write it to the output zip. */
     let mut previous_directory_components: Vec<&str> = Vec::new();
