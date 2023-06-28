@@ -48,15 +48,12 @@
 use displaydoc::Display;
 use futures::future::try_join_all;
 use thiserror::Error;
-use tokio::{
-  io::{AsyncReadExt, AsyncWriteExt},
-  task,
-};
+use tokio::{io::AsyncReadExt, task};
 use zip::{result::ZipError, write::FileOptions, ZipArchive, ZipWriter};
 
 use std::cmp;
-use std::io::{Cursor, Read, Seek, Write};
-use std::path::{Path, PathBuf};
+use std::io::{Cursor, Seek, Write};
+use std::path::PathBuf;
 
 #[derive(Debug, Display, Error)]
 pub enum MedusaZipFormatError {
@@ -66,6 +63,8 @@ pub enum MedusaZipFormatError {
   NameStartsWithSlash(String),
   /// name ends with '/': {0}
   NameEndsWithSlash(String),
+  /// name has '//': {0}
+  NameHasDoubleSlash(String),
 }
 
 #[derive(Debug, Display, Error)]
@@ -78,11 +77,6 @@ pub enum MedusaZipError {
   Join(#[from] task::JoinError),
   /// zip format error: {0}
   ZipFormat(#[from] MedusaZipFormatError),
-}
-
-pub struct MedusaZip {
-  pub input_paths: Vec<(PathBuf, String)>,
-  pub output_path: PathBuf,
 }
 
 struct IntermediateSingleZip {
@@ -102,16 +96,15 @@ impl IntermediateZipCollection {
     } else if name.ends_with('/') {
       /* We only enter file names. */
       Err(MedusaZipFormatError::NameEndsWithSlash(name.to_string()))
+    } else if name.find("//").is_some() {
+      Err(MedusaZipFormatError::NameHasDoubleSlash(name.to_string()))
     } else {
       Ok(())
     }
   }
 
   fn split_directory_components(name: &str) -> Vec<&str> {
-    let mut dir_components: Vec<&str> = name.split('/')
-        /* Discard // components: interpret them as single slashes. */
-        .filter(|c| !c.is_empty())
-        .collect();
+    let mut dir_components: Vec<&str> = name.split('/').collect();
     /* Discard the file name itself. */
     dir_components
       .pop()
@@ -157,8 +150,9 @@ impl IntermediateZipCollection {
         for final_component_index in shared_components..current_directory_components.len() {
           /* Otherwise, we introduce a new directory for each new dir component of the current
            * entry. */
-          let cur_intermediate_directory: String =
-            current_directory_components[..final_component_index].join("/");
+          let cur_intermediate_components = &current_directory_components[..=final_component_index];
+          assert!(cur_intermediate_components.len() > 0);
+          let cur_intermediate_directory: String = cur_intermediate_components.join("/");
           output_zip.add_directory(&cur_intermediate_directory, options)?;
         }
       }
@@ -169,13 +163,18 @@ impl IntermediateZipCollection {
       let mut single_member_zip = ZipArchive::new(Cursor::new(single_member_archive))?;
       /* TODO: can we use .by_index_raw(0) instead? */
       let member = single_member_zip.by_name(&name)?;
-      output_zip.raw_copy_file(member);
+      output_zip.raw_copy_file(member)?;
     }
 
     output_zip.finish()?;
 
     Ok(())
   }
+}
+
+pub struct MedusaZip {
+  pub input_paths: Vec<(PathBuf, String)>,
+  pub output_path: PathBuf,
 }
 
 impl MedusaZip {
@@ -231,7 +230,7 @@ impl MedusaZip {
 
     let returned_path = output_path.clone();
     task::spawn_blocking(move || {
-      let mut output_file = std::fs::OpenOptions::new()
+      let output_file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)

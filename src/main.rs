@@ -45,37 +45,59 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-use libmedusa_zip;
+use libmedusa_zip::{MedusaZip, MedusaZipError};
 
-use zip::{result::ZipError, write::FileOptions, ZipArchive, ZipWriter};
+use std::path::PathBuf;
 
-use std::fs::OpenOptions;
-use std::io::Write;
+/* use zip::{result::ZipError, write::FileOptions, ZipArchive, ZipWriter}; */
 
-fn main() -> Result<(), ZipError> {
-  let mut archive = OpenOptions::new()
-    .write(true)
-    .create(true)
-    .truncate(true)
-    .open("asdf.zip")?;
+/* use std::fs::OpenOptions; */
+/* use std::io::Write; */
 
-  {
-    let mut zip = ZipWriter::new(&mut archive);
-    let options = FileOptions::default();
+/* fn main() -> Result<(), ZipError> { */
+/*   let mut archive = OpenOptions::new() */
+/*     .write(true) */
+/*     .create(true) */
+/*     .truncate(true) */
+/*     .open("asdf.zip")?; */
 
-    zip.start_file("bsdf.txt", options)?;
-    zip.write_all(b"bsdf\n")?;
+/*   { */
+/*     let mut zip = ZipWriter::new(&mut archive); */
+/*     let options = FileOptions::default(); */
 
-    zip.start_file("asdf.txt", options)?;
-    zip.write_all(b"asdf\n")?;
+/*     zip.start_file("asdf.txt", options)?; */
+/*     zip.write_all(b"asdf\n")?; */
 
-    zip.add_directory("a", options)?;
-    zip.start_file("a/b.txt", options)?;
-    zip.write_all(b"ab\n")?;
+/*     zip.start_file("bsdf.txt", options)?; */
+/*     zip.write_all(b"bsdf\n")?; */
 
-    zip.finish()?;
-  }
+/*     zip.add_directory("a", options)?; */
+/*     zip.start_file("a/b.txt", options)?; */
+/*     zip.write_all(b"ab\n")?; */
 
-  archive.sync_all()?;
+/*     zip.add_directory("x", options)?; */
+/*     zip.start_file("x/b.txt", options)?; */
+/*     zip.write_all(b"xb\n")?; */
+
+/*     zip.finish()?; */
+/*   } */
+
+/*   archive.sync_all()?; */
+/*   Ok(()) */
+/* } */
+
+#[tokio::main]
+async fn main() -> Result<(), MedusaZipError> {
+  let zip_spec = MedusaZip {
+    input_paths: vec![
+      (PathBuf::from("tmp/asdf.txt"), "asdf.txt".to_string()),
+      (PathBuf::from("tmp/bsdf.txt"), "bsdf.txt".to_string()),
+      (PathBuf::from("tmp/a/b.txt"), "a/b.txt".to_string()),
+      (PathBuf::from("tmp/x/b.txt"), "x/b.txt".to_string()),
+    ],
+    output_path: PathBuf::from("asdf2.zip"),
+  };
+  let ret = zip_spec.zip().await?;
+  println!("ret = {}", ret.display());
   Ok(())
 }

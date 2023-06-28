@@ -8,6 +8,7 @@ edition                 = "2021"
 
 [dependencies]
 libmedusa-zip           = { path = "./libmedusa-zip" }
+tokio                   = { version = "1.29.0", features = ["macros", "rt", "rt-multi-thread"] }
 zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "21a20584bc9e05dfa4f3c5b0bc420a1389fae2c3" }
 
 [workspace]
