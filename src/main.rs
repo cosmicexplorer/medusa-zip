@@ -94,6 +94,21 @@ async fn main() {
   };
   let crawl_result = crawl.crawl_paths().await.expect("crawling failed");
   println!("crawl_result = {:?}", crawl_result);
+  let crawled_zip = crawl_result.medusa_zip(MedusaZipOptions {
+    reproducibility: Reproducibility::Reproducible,
+  });
+  let crawled_output_path = PathBuf::from("asdf3.zip");
+  let crawled_output_file = OpenOptions::new()
+    .write(true)
+    .create(true)
+    .truncate(true)
+    .open(&crawled_output_path)
+    .expect("file open failed");
+  crawled_zip
+    .zip(crawled_output_file)
+    .await
+    .expect("zipping failed");
+  println!("wrote to: {}", crawled_output_path.display());
 
   let zip_spec = MedusaZip {
     input_paths: vec![
