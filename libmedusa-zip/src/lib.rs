@@ -218,7 +218,6 @@ impl IntermediateZipCollection {
 
 pub struct MedusaZip {
   pub input_paths: Vec<(PathBuf, String)>,
-  pub output_path: PathBuf,
   pub options: MedusaZipOptions,
 }
 
@@ -261,10 +260,12 @@ impl MedusaZip {
     })
   }
 
-  pub async fn zip(self) -> Result<PathBuf, MedusaZipError> {
+  pub async fn zip<Output>(self, output: Output) -> Result<(), MedusaZipError>
+  where
+    Output: Write + Seek + Send + 'static,
+  {
     let Self {
       input_paths,
-      output_path,
       options,
     } = self;
 
@@ -276,37 +277,75 @@ impl MedusaZip {
     .await?;
     let intermediate_zips = IntermediateZipCollection(intermediate_zips);
 
-    let returned_path = output_path.clone();
     task::spawn_blocking(move || {
-      let output_file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&output_path)?;
-
-      intermediate_zips.write_zip(options, output_file)?;
+      intermediate_zips.write_zip(options, output)?;
 
       Ok::<(), MedusaZipError>(())
     });
-
-    Ok(returned_path)
+    Ok(())
   }
 }
+
+/* #[derive(Debug, Display, Error)] */
+/* pub enum MedusaCrawlFormatError { */
+/*   /// path was absolute: {0} */
+/*   PathWasAbsolute(PathBuf), */
+/* } */
 
 /* #[derive(Debug, Display, Error)] */
 /* pub enum MedusaCrawlError { */
 /*   /// i/o error: {0} */
 /*   Io(#[from] std::io::Error), */
+/*   /// crawl input format error: {0} */
+/*   Format(#[from] MedusaCrawlFormatError), */
 /* } */
 
 /* pub struct MedusaCrawl { */
 /*   pub paths_to_crawl: Vec<PathBuf>, */
 /* } */
 
-/* impl MedusaCrawl { */
-/*   pub async fn crawl_paths(self, output_path: PathBuf) -> Result<MedusaZip, MedusaCrawlError> { */
+/* pub struct CrawlResult { */
+/*   pub real_file_paths: Vec<PathBuf>, */
+/* } */
 
+/* impl CrawlResult { */
+/*   pub fn medusa_zip(self, options: MedusaZipOptions) -> MedusaZip { */
+/*     let Self { real_file_paths } = self; */
+/*     let input_paths: Vec<(PathBuf, String)> = real_file_paths */
+/*       .into_iter() */
+/*       .map(|path| { */
+/*         let name = path */
+/*           .clone() */
+/*           .into_os_string() */
+/*           .into_string() */
+/*           .expect("expected valid unicode path"); */
+/*         (path, name) */
+/*       }) */
+/*       .collect(); */
+/*     MedusaZip { */
+/*       input_paths, */
+/*       options, */
+/*     } */
 /*   } */
+/* } */
+
+/* impl MedusaCrawl { */
+/*   pub async fn crawl_paths(self) -> Result<CrawlResult, MedusaCrawlError> {} */
+/* } */
+
+/* struct IntermediateCrawl { */
+/*   pub prefix: PathBuf, */
+/*   pub dirs: Vec<PathBuf>, */
+/*   pub files: Vec<PathBuf>, */
+/*   pub links: Vec<PathBuf>, */
+/* } */
+
+/* impl IntermediateCrawl { */
+/*   pub fn expansion_remaining(&self) -> bool { */
+/*     !(self.dirs.is_empty() && self.links.is_empty()) */
+/*   } */
+
+/*   pub async fn iterate_crawl(self) -> Self {} */
 /* } */
 
 /* #[cfg(test)] */

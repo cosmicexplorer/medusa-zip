@@ -47,6 +47,7 @@
 
 use libmedusa_zip::{MedusaZip, MedusaZipError, MedusaZipOptions, Reproducibility};
 
+use std::fs::OpenOptions;
 use std::path::PathBuf;
 
 /* use zip::{result::ZipError, write::FileOptions, ZipArchive, ZipWriter}; */
@@ -95,12 +96,18 @@ async fn main() -> Result<(), MedusaZipError> {
       (PathBuf::from("tmp/a/b.txt"), "a/b.txt".to_string()),
       (PathBuf::from("tmp/x/b.txt"), "x/b.txt".to_string()),
     ],
-    output_path: PathBuf::from("asdf2.zip"),
     options: MedusaZipOptions {
       reproducibility: Reproducibility::Reproducible,
     },
   };
-  let ret = zip_spec.zip().await?;
-  println!("ret = {}", ret.display());
+  let output_path = PathBuf::from("asdf2.zip");
+  let output_file = OpenOptions::new()
+    .write(true)
+    .create(true)
+    .truncate(true)
+    .open(&output_path)?;
+
+  zip_spec.zip(output_file).await?;
+  println!("wrote to: {}", output_path.display());
   Ok(())
 }
