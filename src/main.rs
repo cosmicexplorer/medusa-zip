@@ -45,7 +45,7 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-use libmedusa_zip::{MedusaZip, MedusaZipError, MedusaZipOptions, Reproducibility};
+use libmedusa_zip::{MedusaCrawl, MedusaZip, MedusaZipOptions, Reproducibility};
 
 use std::fs::OpenOptions;
 use std::path::PathBuf;
@@ -88,7 +88,13 @@ use std::path::PathBuf;
 /* } */
 
 #[tokio::main]
-async fn main() -> Result<(), MedusaZipError> {
+async fn main() {
+  let crawl = MedusaCrawl {
+    paths_to_crawl: vec![PathBuf::from("tmp3")],
+  };
+  let crawl_result = crawl.crawl_paths().await.expect("crawling failed");
+  println!("crawl_result = {:?}", crawl_result);
+
   let zip_spec = MedusaZip {
     input_paths: vec![
       (PathBuf::from("tmp/asdf.txt"), "asdf.txt".to_string()),
@@ -105,9 +111,9 @@ async fn main() -> Result<(), MedusaZipError> {
     .write(true)
     .create(true)
     .truncate(true)
-    .open(&output_path)?;
+    .open(&output_path)
+    .expect("file open failed");
 
-  zip_spec.zip(output_file).await?;
+  zip_spec.zip(output_file).await.expect("zipping failed");
   println!("wrote to: {}", output_path.display());
-  Ok(())
 }

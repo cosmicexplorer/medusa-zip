@@ -45,16 +45,16 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
+use async_recursion::async_recursion;
 use displaydoc::Display;
-use futures::{future::try_join_all, pin_mut, stream::StreamExt};
+use futures::{future::try_join_all, stream::StreamExt};
 use thiserror::Error;
 use tokio::{
   fs,
   io::{self, AsyncReadExt},
-  sync::mpsc,
   task,
 };
-use tokio_stream::wrappers::{ReadDirStream, UnboundedReceiverStream};
+use tokio_stream::wrappers::ReadDirStream;
 use zip::{self, result::ZipError, ZipArchive, ZipWriter};
 
 use std::cmp;
@@ -303,8 +303,6 @@ pub enum MedusaCrawlFormatError {
 pub enum MedusaCrawlError {
   /// i/o error: {0}
   Io(#[from] io::Error),
-  /// send error: {0:?}
-  ChannelSend(#[from] mpsc::error::SendError<Input>),
   /// crawl input format error: {0}
   CrawlFormat(#[from] MedusaCrawlFormatError),
 }
@@ -342,11 +340,23 @@ impl ResolvedPath {
   }
 }
 
+#[derive(Debug)]
 pub struct CrawlResult {
   pub real_file_paths: Vec<ResolvedPath>,
 }
 
 impl CrawlResult {
+  pub(crate) fn merge(results: Vec<Self>) -> Self {
+    let merged_file_paths: Vec<ResolvedPath> = results
+      .into_iter()
+      .map(|Self { real_file_paths }| real_file_paths)
+      .flatten()
+      .collect();
+    Self {
+      real_file_paths: merged_file_paths,
+    }
+  }
+
   pub fn medusa_zip(self, options: MedusaZipOptions) -> MedusaZip {
     let Self { real_file_paths } = self;
     let input_paths: Vec<(PathBuf, String)> = real_file_paths
@@ -371,6 +381,7 @@ impl CrawlResult {
   }
 }
 
+#[derive(Debug)]
 enum Entry {
   Symlink(ResolvedPath),
   Directory(ResolvedPath),
@@ -385,7 +396,7 @@ pub enum Input {
 }
 
 impl Input {
-  pub(crate) async fn classify(self) -> Result<Entry, io::Error> {
+  async fn classify(self) -> Result<Entry, io::Error> {
     let (file_type, path) = match self {
       Self::Path(path) => {
         let file_type = fs::symlink_metadata(&path.resolved_path).await?.file_type();
@@ -405,6 +416,42 @@ impl Input {
       Ok(Entry::File(path))
     }
   }
+
+  #[async_recursion]
+  pub(crate) async fn crawl_single(self) -> Result<CrawlResult, MedusaCrawlError> {
+    match self.classify().await? {
+      Entry::File(resolved_path) => Ok(CrawlResult {
+        real_file_paths: vec![resolved_path],
+      }),
+      Entry::Symlink(ResolvedPath {
+        unresolved_path,
+        resolved_path,
+      }) => {
+        /* Symlinks are resolved relative to the parent directory! */
+        let resolved_parent_dir = resolved_path
+          .parent()
+          .expect("should always be a parent, even if empty");
+        let new_path = resolved_parent_dir.join(fs::read_link(&resolved_path).await?);
+        let inner = Self::Path(ResolvedPath {
+          unresolved_path,
+          resolved_path: new_path,
+        });
+        Ok(inner.crawl_single().await?)
+      },
+      Entry::Directory(parent_resolved_path) => {
+        let results = ReadDirStream::new(fs::read_dir(&parent_resolved_path.resolved_path).await?)
+          .then(|dir_entry| async {
+            let inner = Self::DirEntry(parent_resolved_path.clone(), dir_entry?);
+            Ok(inner.crawl_single().await?)
+          })
+          .collect::<Vec<Result<CrawlResult, MedusaCrawlError>>>()
+          .await
+          .into_iter()
+          .collect::<Result<Vec<CrawlResult>, MedusaCrawlError>>()?;
+        Ok(CrawlResult::merge(results))
+      },
+    }
+  }
 }
 
 pub struct MedusaCrawl {
@@ -415,44 +462,13 @@ impl MedusaCrawl {
   pub async fn crawl_paths(self) -> Result<CrawlResult, MedusaCrawlError> {
     let Self { paths_to_crawl } = self;
 
-    let (input_tx, input_rx) = mpsc::unbounded_channel::<Input>();
-    let mut real_file_paths: Vec<ResolvedPath> = Vec::new();
-
-    for path in paths_to_crawl.into_iter() {
-      input_tx.send(Input::Path(ResolvedPath::from_path(path)))?;
-    }
-
-    let input_stream = UnboundedReceiverStream::new(input_rx).then(Input::classify);
-    pin_mut!(input_stream);
-    while let Some(entry) = input_stream.next().await {
-      match entry? {
-        Entry::File(resolved_path) => {
-          real_file_paths.push(resolved_path);
-        },
-        Entry::Symlink(ResolvedPath {
-          unresolved_path,
-          resolved_path,
-        }) => {
-          let new_path = fs::read_link(resolved_path).await?;
-          input_tx.send(Input::Path(ResolvedPath {
-            unresolved_path,
-            resolved_path: new_path,
-          }))?;
-        },
-        Entry::Directory(parent_resolved_path) => {
-          let read_dir_stream =
-            ReadDirStream::new(fs::read_dir(&parent_resolved_path.resolved_path).await?);
-          pin_mut!(read_dir_stream);
-          while let Some(dir_entry) = read_dir_stream.next().await {
-            input_tx.send(Input::DirEntry(parent_resolved_path.clone(), dir_entry?))?;
-          }
-        },
-      }
-    }
-
-    let result = CrawlResult { real_file_paths };
-
-    Ok(result)
+    let results: Vec<CrawlResult> = try_join_all(
+      paths_to_crawl
+        .into_iter()
+        .map(|path| Input::Path(ResolvedPath::from_path(path)).crawl_single()),
+    )
+    .await?;
+    Ok(CrawlResult::merge(results))
   }
 }
 
