@@ -52,7 +52,7 @@ use tokio::{io::AsyncReadExt, task};
 use zip::{self, result::ZipError, ZipArchive, ZipWriter};
 
 use std::cmp;
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::{Cursor, Seek, Write};
 use std::path::PathBuf;
 
 #[derive(Debug, Display, Error)]
@@ -281,7 +281,8 @@ impl MedusaZip {
       intermediate_zips.write_zip(options, output)?;
 
       Ok::<(), MedusaZipError>(())
-    });
+    })
+    .await??;
     Ok(())
   }
 }
@@ -298,10 +299,6 @@ impl MedusaZip {
 /*   Io(#[from] std::io::Error), */
 /*   /// crawl input format error: {0} */
 /*   Format(#[from] MedusaCrawlFormatError), */
-/* } */
-
-/* pub struct MedusaCrawl { */
-/*   pub paths_to_crawl: Vec<PathBuf>, */
 /* } */
 
 /* pub struct CrawlResult { */
@@ -329,8 +326,14 @@ impl MedusaZip {
 /*   } */
 /* } */
 
+/* pub struct MedusaCrawl { */
+/*   pub paths_to_crawl: Vec<PathBuf>, */
+/* } */
+
 /* impl MedusaCrawl { */
-/*   pub async fn crawl_paths(self) -> Result<CrawlResult, MedusaCrawlError> {} */
+/*   pub async fn crawl_paths(self) -> Result<CrawlResult, MedusaCrawlError> { */
+
+/*   } */
 /* } */
 
 /* struct IntermediateCrawl { */
