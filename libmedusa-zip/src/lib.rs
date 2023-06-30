@@ -46,14 +46,20 @@
 #![allow(clippy::mutex_atomic)]
 
 use displaydoc::Display;
-use futures::future::try_join_all;
+use futures::{future::try_join_all, pin_mut, stream::StreamExt};
 use thiserror::Error;
-use tokio::{io::AsyncReadExt, task};
+use tokio::{
+  fs,
+  io::{self, AsyncReadExt},
+  sync::mpsc,
+  task,
+};
+use tokio_stream::wrappers::{ReadDirStream, UnboundedReceiverStream};
 use zip::{self, result::ZipError, ZipArchive, ZipWriter};
 
 use std::cmp;
 use std::io::{Cursor, Seek, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Display, Error)]
 pub enum MedusaZipFormatError {
@@ -70,7 +76,7 @@ pub enum MedusaZipFormatError {
 #[derive(Debug, Display, Error)]
 pub enum MedusaZipError {
   /// i/o error: {0}
-  Io(#[from] std::io::Error),
+  Io(#[from] io::Error),
   /// zip error: {0}
   Zip(#[from] ZipError),
   /// join error: {0}
@@ -229,7 +235,7 @@ impl MedusaZip {
   ) -> Result<IntermediateSingleZip, MedusaZipError> {
     let mut input_file_contents = Vec::new();
     let MedusaZipOptions { reproducibility } = medusa_zip_options;
-    tokio::fs::OpenOptions::new()
+    fs::OpenOptions::new()
       .read(true)
       .open(&input_path)
       .await?
@@ -287,69 +293,168 @@ impl MedusaZip {
   }
 }
 
-/* #[derive(Debug, Display, Error)] */
-/* pub enum MedusaCrawlFormatError { */
-/*   /// path was absolute: {0} */
-/*   PathWasAbsolute(PathBuf), */
-/* } */
+#[derive(Debug, Display, Error)]
+pub enum MedusaCrawlFormatError {
+  /// path was absolute: {0}
+  PathWasAbsolute(PathBuf),
+}
 
-/* #[derive(Debug, Display, Error)] */
-/* pub enum MedusaCrawlError { */
-/*   /// i/o error: {0} */
-/*   Io(#[from] std::io::Error), */
-/*   /// crawl input format error: {0} */
-/*   Format(#[from] MedusaCrawlFormatError), */
-/* } */
+#[derive(Debug, Display, Error)]
+pub enum MedusaCrawlError {
+  /// i/o error: {0}
+  Io(#[from] io::Error),
+  /// send error: {0:?}
+  ChannelSend(#[from] mpsc::error::SendError<Input>),
+  /// crawl input format error: {0}
+  CrawlFormat(#[from] MedusaCrawlFormatError),
+}
 
-/* pub struct CrawlResult { */
-/*   pub real_file_paths: Vec<PathBuf>, */
-/* } */
+#[derive(Clone, Debug)]
+pub struct ResolvedPath {
+  /// The path *without* any symlink resolution.
+  pub unresolved_path: PathBuf,
+  /// The path *with* symlink resolution (may be the same, if the original path had no symlinks).
+  pub resolved_path: PathBuf,
+}
 
-/* impl CrawlResult { */
-/*   pub fn medusa_zip(self, options: MedusaZipOptions) -> MedusaZip { */
-/*     let Self { real_file_paths } = self; */
-/*     let input_paths: Vec<(PathBuf, String)> = real_file_paths */
-/*       .into_iter() */
-/*       .map(|path| { */
-/*         let name = path */
-/*           .clone() */
-/*           .into_os_string() */
-/*           .into_string() */
-/*           .expect("expected valid unicode path"); */
-/*         (path, name) */
-/*       }) */
-/*       .collect(); */
-/*     MedusaZip { */
-/*       input_paths, */
-/*       options, */
-/*     } */
-/*   } */
-/* } */
+impl ResolvedPath {
+  pub fn from_path(path: PathBuf) -> Self {
+    Self {
+      unresolved_path: path.clone(),
+      resolved_path: path,
+    }
+  }
 
-/* pub struct MedusaCrawl { */
-/*   pub paths_to_crawl: Vec<PathBuf>, */
-/* } */
+  fn join(self, path: &Path) -> Self {
+    let Self {
+      unresolved_path,
+      resolved_path,
+    } = self;
+    Self {
+      unresolved_path: unresolved_path.join(path),
+      resolved_path: resolved_path.join(path),
+    }
+  }
 
-/* impl MedusaCrawl { */
-/*   pub async fn crawl_paths(self) -> Result<CrawlResult, MedusaCrawlError> { */
+  pub(crate) fn resolve_child_dir_entry(self, child: fs::DirEntry) -> Self {
+    let file_name: PathBuf = child.file_name().into();
+    self.join(&file_name)
+  }
+}
 
-/*   } */
-/* } */
+pub struct CrawlResult {
+  pub real_file_paths: Vec<ResolvedPath>,
+}
 
-/* struct IntermediateCrawl { */
-/*   pub prefix: PathBuf, */
-/*   pub dirs: Vec<PathBuf>, */
-/*   pub files: Vec<PathBuf>, */
-/*   pub links: Vec<PathBuf>, */
-/* } */
+impl CrawlResult {
+  pub fn medusa_zip(self, options: MedusaZipOptions) -> MedusaZip {
+    let Self { real_file_paths } = self;
+    let input_paths: Vec<(PathBuf, String)> = real_file_paths
+      .into_iter()
+      .map(
+        |ResolvedPath {
+           unresolved_path,
+           resolved_path,
+         }| {
+          let name = unresolved_path
+            .into_os_string()
+            .into_string()
+            .expect("expected valid unicode path");
+          (resolved_path, name)
+        },
+      )
+      .collect();
+    MedusaZip {
+      input_paths,
+      options,
+    }
+  }
+}
 
-/* impl IntermediateCrawl { */
-/*   pub fn expansion_remaining(&self) -> bool { */
-/*     !(self.dirs.is_empty() && self.links.is_empty()) */
-/*   } */
+enum Entry {
+  Symlink(ResolvedPath),
+  Directory(ResolvedPath),
+  File(ResolvedPath),
+}
 
-/*   pub async fn iterate_crawl(self) -> Self {} */
-/* } */
+#[derive(Debug)]
+pub enum Input {
+  Path(ResolvedPath),
+  /// The `ResolvedPath` corresponds to the parent directory.
+  DirEntry(ResolvedPath, fs::DirEntry),
+}
+
+impl Input {
+  pub(crate) async fn classify(self) -> Result<Entry, io::Error> {
+    let (file_type, path) = match self {
+      Self::Path(path) => {
+        let file_type = fs::symlink_metadata(&path.resolved_path).await?.file_type();
+        (file_type, path)
+      },
+      Self::DirEntry(parent_path, entry) => {
+        let file_type = entry.file_type().await?;
+        (file_type, parent_path.resolve_child_dir_entry(entry))
+      },
+    };
+    if file_type.is_symlink() {
+      Ok(Entry::Symlink(path))
+    } else if file_type.is_dir() {
+      Ok(Entry::Directory(path))
+    } else {
+      assert!(file_type.is_file());
+      Ok(Entry::File(path))
+    }
+  }
+}
+
+pub struct MedusaCrawl {
+  pub paths_to_crawl: Vec<PathBuf>,
+}
+
+impl MedusaCrawl {
+  pub async fn crawl_paths(self) -> Result<CrawlResult, MedusaCrawlError> {
+    let Self { paths_to_crawl } = self;
+
+    let (input_tx, input_rx) = mpsc::unbounded_channel::<Input>();
+    let mut real_file_paths: Vec<ResolvedPath> = Vec::new();
+
+    for path in paths_to_crawl.into_iter() {
+      input_tx.send(Input::Path(ResolvedPath::from_path(path)))?;
+    }
+
+    let input_stream = UnboundedReceiverStream::new(input_rx).then(Input::classify);
+    pin_mut!(input_stream);
+    while let Some(entry) = input_stream.next().await {
+      match entry? {
+        Entry::File(resolved_path) => {
+          real_file_paths.push(resolved_path);
+        },
+        Entry::Symlink(ResolvedPath {
+          unresolved_path,
+          resolved_path,
+        }) => {
+          let new_path = fs::read_link(resolved_path).await?;
+          input_tx.send(Input::Path(ResolvedPath {
+            unresolved_path,
+            resolved_path: new_path,
+          }))?;
+        },
+        Entry::Directory(parent_resolved_path) => {
+          let read_dir_stream =
+            ReadDirStream::new(fs::read_dir(&parent_resolved_path.resolved_path).await?);
+          pin_mut!(read_dir_stream);
+          while let Some(dir_entry) = read_dir_stream.next().await {
+            input_tx.send(Input::DirEntry(parent_resolved_path.clone(), dir_entry?))?;
+          }
+        },
+      }
+    }
+
+    let result = CrawlResult { real_file_paths };
+
+    Ok(result)
+  }
+}
 
 /* #[cfg(test)] */
 /* mod test { */
