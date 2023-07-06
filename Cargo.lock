@@ -618,8 +618,10 @@ name = "medusa-zip"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "displaydoc",
  "libmedusa-zip",
  "serde_json",
+ "thiserror",
  "tokio",
  "zip",
 ]

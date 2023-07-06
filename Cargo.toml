@@ -8,8 +8,10 @@ edition                 = "2021"
 
 [dependencies]
 clap                    = { version = "4.3.11", features = ["derive"] }
+displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
 libmedusa-zip           = { path = "./libmedusa-zip" }
 serde_json              = "1.0"
+thiserror               = "1.0.30"
 tokio                   = { version = "1.29", features = ["macros", "rt", "rt-multi-thread"] }
 zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "21a20584bc9e05dfa4f3c5b0bc420a1389fae2c3" }
 

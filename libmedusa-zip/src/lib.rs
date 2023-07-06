@@ -10,9 +10,9 @@
 //! ???
 
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
- * or correctness of the code.
- * TODO: #![warn(missing_docs)]
- * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
+ * or correctness of the code. */
+#![warn(missing_docs)]
+/* TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
  * pair of delimiters)
  * Note: run clippy with: rustup run nightly cargo-clippy! */
 #![deny(unsafe_code)]
@@ -89,13 +89,16 @@ pub enum MedusaZipError {
 
 #[derive(Copy, Clone, Default, Debug, ValueEnum)]
 pub enum Reproducibility {
+  /// All modification times for entries will be set to 1980-01-1.
   #[default]
   Reproducible,
+  /// Each file's modification time will be converted into a zip timestamp when it is entered into
+  /// the archive.
   CurrentTime,
 }
 
 impl Reproducibility {
-  pub fn zip_options(self) -> zip::write::FileOptions {
+  pub(crate) fn zip_options(self) -> zip::write::FileOptions {
     match self {
       Reproducibility::CurrentTime => zip::write::FileOptions::default(),
       Reproducibility::Reproducible => {
@@ -109,6 +112,7 @@ impl Reproducibility {
 
 #[derive(Copy, Clone, Default, Debug, Args)]
 pub struct MedusaZipOptions {
+  /// Reproducibility behavior when generating zip archives.
   #[arg(value_enum, default_value_t, short, long)]
   pub reproducibility: Reproducibility,
 }
@@ -119,6 +123,9 @@ struct IntermediateSingleZip {
   pub single_member_archive: Vec<u8>,
 }
 
+/* Implement {Partial,}Ord to sort a vector of these by name without additional allocation, because
+ * Vec::sort_by_key() gets mad if the key possesses a lifetime, otherwise requiring the `name`
+ * string to be cloned. */
 impl cmp::PartialOrd for IntermediateSingleZip {
   fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
     self.name.partial_cmp(&other.name)

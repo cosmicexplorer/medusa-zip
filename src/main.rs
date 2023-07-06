@@ -1,5 +1,6 @@
 /*
- * Description: ???
+ * Description: Crawl file paths and produce zip files with some level of i/o and
+ * compute parallelism.
  *
  * Copyright (C) 2023 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: Apache-2.0
@@ -7,12 +8,12 @@
  * Licensed under the Apache License, Version 2.0 (see LICENSE).
  */
 
-//! ???
+//! Crawl file paths and produce zip files with some level of i/o and compute parallelism.
 
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
- * or correctness of the code.
- * TODO: #![warn(missing_docs)]
- * TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
+ * or correctness of the code. */
+#![warn(missing_docs)]
+/* TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
  * pair of delimiters)
  * Note: run clippy with: rustup run nightly cargo-clippy! */
 #![deny(unsafe_code)]
@@ -45,77 +46,109 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-use libmedusa_zip::{CrawlResult, MedusaCrawl};
-
-use clap::Parser;
-use serde_json;
-
-use std::fs::OpenOptions;
-use std::io::{self, Read};
+use clap::Parser as _;
 
 mod cli {
-  use libmedusa_zip::MedusaZipOptions;
+  mod args {
+    use libmedusa_zip::MedusaZipOptions;
 
-  use clap::{Parser, Subcommand};
+    use clap::{Parser, Subcommand};
 
-  use std::path::PathBuf;
+    use std::path::PathBuf;
 
-  #[derive(Subcommand, Debug)]
-  pub enum Command {
-    Crawl {
-      paths: Vec<PathBuf>,
-    },
-    Zip {
-      output: PathBuf,
-      #[command(flatten)]
-      options: MedusaZipOptions,
-    },
+    #[derive(Subcommand, Debug)]
+    pub enum Command {
+      /// Write a JSON object to stdout which contains all the file paths under the top-level
+      /// `paths`.
+      Crawl { paths: Vec<PathBuf> },
+      /// Consume a JSON object from [`Self::Crawl`] over stdin and write those files into a zip
+      /// file at `output`.
+      Zip {
+        /// File path to write a zip to.
+        output: PathBuf,
+        #[command(flatten)]
+        options: MedusaZipOptions,
+      },
+    }
+
+    /// Crawl file paths and produce zip files with some level of i/o and compute parallelism.
+    #[derive(Parser, Debug)]
+    #[command(author, version, about, long_about = None)]
+    pub struct Cli {
+      #[command(subcommand)]
+      pub command: Command,
+    }
   }
+  pub use args::{Cli, Command};
 
-  #[derive(Parser, Debug)]
-  #[command(author, version, about, long_about = None)]
-  pub struct Cli {
-    #[command(subcommand)]
-    pub command: Command,
+  mod run {
+    use super::{Cli, Command};
+
+    use libmedusa_zip::{CrawlResult, MedusaCrawl, MedusaCrawlError, MedusaZipError};
+
+    use displaydoc::Display;
+    use thiserror::Error;
+
+    use serde_json;
+
+    use std::fs::OpenOptions;
+    use std::io::{self, Read};
+
+    #[derive(Debug, Display, Error)]
+    pub enum MedusaCliError {
+      /// error performing parallel zip: {0}
+      MedusaZip(#[from] MedusaZipError),
+      /// error performing parallel crawl: {0}
+      MedusaCrawl(#[from] MedusaCrawlError),
+      /// error performing top-level i/o: {0}
+      Io(#[from] io::Error),
+      /// error de/serializing json: {0}
+      Json(#[from] serde_json::Error),
+    }
+
+    impl Cli {
+      pub async fn run(self) -> Result<(), MedusaCliError> {
+        let Self { command } = self;
+
+        match command {
+          Command::Crawl { paths } => {
+            let crawl = MedusaCrawl {
+              paths_to_crawl: paths,
+            };
+            let crawl_result = crawl.crawl_paths().await?;
+            let crawl_json = serde_json::to_string(&crawl_result)?;
+
+            /* Print json serialization to stdout. */
+            println!("{}", crawl_json);
+          },
+          Command::Zip { output, options } => {
+            /* Read json serialization from stdin. */
+            let mut input_json: Vec<u8> = Vec::new();
+            io::stdin().lock().read_to_end(&mut input_json)?;
+            let crawl_result: CrawlResult = serde_json::from_slice(&input_json)?;
+            /* Apply options from command line to produce a zip spec. */
+            let crawled_zip = crawl_result.medusa_zip(options);
+
+            let output_file = OpenOptions::new()
+              .write(true)
+              .create(true)
+              .truncate(true)
+              .open(&output)?;
+            crawled_zip.zip(output_file).await?;
+
+            eprintln!("wrote to: {}", output.display());
+          },
+        }
+
+        Ok(())
+      }
+    }
   }
 }
-use cli::*;
 
 #[tokio::main]
 async fn main() {
-  let Cli { command } = Cli::parse();
+  let cli = cli::Cli::parse();
 
-  match command {
-    Command::Crawl { paths } => {
-      let crawl = MedusaCrawl {
-        paths_to_crawl: paths,
-      };
-      let crawl_result = crawl.crawl_paths().await.expect("crawling failed");
-      let crawl_json = serde_json::to_string(&crawl_result).expect("serializing crawl failed");
-
-      /* Print json serialization to stdout. */
-      println!("{}", crawl_json);
-    },
-    Command::Zip { output, options } => {
-      /* Read json serialization from stdin. */
-      let mut input_json: Vec<u8> = Vec::new();
-      io::stdin()
-        .lock()
-        .read_to_end(&mut input_json)
-        .expect("reading stdin failed");
-      let crawl_result: CrawlResult =
-        serde_json::from_slice(&input_json).expect("deserializing crawl failed");
-      let crawled_zip = crawl_result.medusa_zip(options.into());
-
-      let output_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&output)
-        .expect("output zip open failed");
-      crawled_zip.zip(output_file).await.expect("zipping failed");
-
-      eprintln!("wrote to: {}", output.display());
-    },
-  }
+  cli.run().await.expect("top-level error");
 }
