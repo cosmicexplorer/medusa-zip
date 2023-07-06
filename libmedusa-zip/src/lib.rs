@@ -35,10 +35,11 @@
 #![allow(clippy::match_ref_pats)]
 /* Subjective style. */
 #![allow(
-  clippy::derive_hash_xor_eq,
+  clippy::derived_hash_with_manual_eq,
   clippy::len_without_is_empty,
   clippy::redundant_field_names,
-  clippy::too_many_arguments
+  clippy::too_many_arguments,
+  clippy::single_component_path_imports,
 )]
 /* Default isn't as big a deal as people seem to think it is. */
 #![allow(clippy::new_without_default, clippy::new_ret_no_self)]
@@ -150,7 +151,7 @@ pub mod zip {
       } else if name.ends_with('/') {
         /* We only enter file names. */
         Err(MedusaZipFormatError::NameEndsWithSlash(name.to_string()))
-      } else if name.find("//").is_some() {
+      } else if name.contains("//") {
         Err(MedusaZipFormatError::NameHasDoubleSlash(name.to_string()))
       } else {
         Ok(())
@@ -213,7 +214,7 @@ pub mod zip {
              * entry. */
             let cur_intermediate_components =
               &current_directory_components[..=final_component_index];
-            assert!(cur_intermediate_components.len() > 0);
+            assert!(!cur_intermediate_components.is_empty());
             let cur_intermediate_directory: String = cur_intermediate_components.join("/");
             output_zip.add_directory(&cur_intermediate_directory, zip_options)?;
           }
@@ -224,7 +225,7 @@ pub mod zip {
         /* Finally we can just write the actual file now! */
         let mut single_member_zip = ZipArchive::new(Cursor::new(single_member_archive))?;
         /* TODO: can we use .by_index_raw(0) instead? */
-        let member = single_member_zip.by_name(&name)?;
+        let member = single_member_zip.by_name(name)?;
         output_zip.raw_copy_file(member)?;
       }
 
@@ -376,8 +377,7 @@ pub mod crawl {
     pub(crate) fn merge(results: Vec<Self>) -> Self {
       let merged_file_paths: Vec<ResolvedPath> = results
         .into_iter()
-        .map(|Self { real_file_paths }| real_file_paths)
-        .flatten()
+        .flat_map(|Self { real_file_paths }| real_file_paths)
         .collect();
       Self {
         real_file_paths: merged_file_paths,
@@ -470,7 +470,7 @@ pub mod crawl {
             ReadDirStream::new(fs::read_dir(&parent_resolved_path.resolved_path).await?)
               .then(|dir_entry| async {
                 let inner = Self::DirEntry(parent_resolved_path.clone(), dir_entry?);
-                Ok(inner.crawl_single().await?)
+                inner.crawl_single().await
               })
               .collect::<Vec<Result<CrawlResult, MedusaCrawlError>>>()
               .await

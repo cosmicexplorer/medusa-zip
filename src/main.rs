@@ -36,10 +36,11 @@
 #![allow(clippy::match_ref_pats)]
 /* Subjective style. */
 #![allow(
-  clippy::derive_hash_xor_eq,
+  clippy::derived_hash_with_manual_eq,
   clippy::len_without_is_empty,
   clippy::redundant_field_names,
-  clippy::too_many_arguments
+  clippy::too_many_arguments,
+  clippy::single_component_path_imports,
 )]
 /* Default isn't as big a deal as people seem to think it is. */
 #![allow(clippy::new_without_default, clippy::new_ret_no_self)]
