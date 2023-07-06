@@ -77,6 +77,12 @@ pub mod zip {
     NameHasDoubleSlash(String),
   }
 
+  #[derive(Debug, Display, Error)]
+  pub enum MedusaInputReadError {
+    /// Source file {0:?} from crawl could not be accessed: {1}.
+    SourceNotFound(PathBuf, #[source] io::Error),
+  }
+
   /// All types of errors from the parallel zip process.
   #[derive(Debug, Display, Error)]
   pub enum MedusaZipError {
@@ -88,6 +94,8 @@ pub mod zip {
     Join(#[from] task::JoinError),
     /// zip format error: {0}
     ZipFormat(#[from] MedusaZipFormatError),
+    /// error reading input file: {0}
+    InputRead(#[from] MedusaInputReadError),
   }
 
   #[derive(Copy, Clone, Default, Debug, ValueEnum)]
@@ -137,7 +145,9 @@ pub mod zip {
   }
 
   impl cmp::Ord for IntermediateSingleZip {
-    fn cmp(&self, other: &Self) -> cmp::Ordering { self.name.cmp(&other.name) }
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+      self.name.cmp(&other.name)
+    }
   }
 
   struct IntermediateZipCollection(pub Vec<IntermediateSingleZip>);
@@ -169,7 +179,7 @@ pub mod zip {
       dir_components
     }
 
-    pub fn write_zip<W: Write+Seek>(
+    pub fn write_zip<W: Write + Seek>(
       self,
       medusa_zip_options: MedusaZipOptions,
       w: W,
@@ -255,7 +265,8 @@ pub mod zip {
       fs::OpenOptions::new()
         .read(true)
         .open(&input_path)
-        .await?
+        .await
+        .map_err(|e| MedusaInputReadError::SourceNotFound(input_path, e))?
         .read_to_end(&mut input_file_contents)
         .await?;
 
@@ -284,7 +295,9 @@ pub mod zip {
     }
 
     pub async fn zip<Output>(self, output: Output) -> Result<(), MedusaZipError>
-    where Output: Write+Seek+Send+'static {
+    where
+      Output: Write + Seek + Send + 'static,
+    {
       let Self {
         input_paths,
         options,
