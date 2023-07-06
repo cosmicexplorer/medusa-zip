@@ -47,88 +47,92 @@
 
 use libmedusa_zip::{MedusaCrawl, MedusaZip, MedusaZipOptions, Reproducibility};
 
+use clap::{Parser, Subcommand};
+use serde_json;
+
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 
-/* use zip::{result::ZipError, write::FileOptions, ZipArchive, ZipWriter}; */
+#[derive(Subcommand, Debug)]
+enum Command {
+  Crawl {
+    paths: Vec<PathBuf>,
+  },
+  Zip {
+    /* #[arg()] */
+    /* file_inputs: Vec<(PathBuf, String)>, */
+    file_inputs: Vec<PathBuf>,
+    output: PathBuf,
+  },
+  TempDemo,
+}
 
-/* use std::fs::OpenOptions; */
-/* use std::io::Write; */
-
-/* fn main() -> Result<(), ZipError> { */
-/*   let mut archive = OpenOptions::new() */
-/*     .write(true) */
-/*     .create(true) */
-/*     .truncate(true) */
-/*     .open("asdf.zip")?; */
-
-/*   { */
-/*     let mut zip = ZipWriter::new(&mut archive); */
-/*     let options = FileOptions::default(); */
-
-/*     zip.start_file("asdf.txt", options)?; */
-/*     zip.write_all(b"asdf\n")?; */
-
-/*     zip.start_file("bsdf.txt", options)?; */
-/*     zip.write_all(b"bsdf\n")?; */
-
-/*     zip.add_directory("a", options)?; */
-/*     zip.start_file("a/b.txt", options)?; */
-/*     zip.write_all(b"ab\n")?; */
-
-/*     zip.add_directory("x", options)?; */
-/*     zip.start_file("x/b.txt", options)?; */
-/*     zip.write_all(b"xb\n")?; */
-
-/*     zip.finish()?; */
-/*   } */
-
-/*   archive.sync_all()?; */
-/*   Ok(()) */
-/* } */
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+  #[command(subcommand)]
+  command: Command,
+}
 
 #[tokio::main]
 async fn main() {
-  let crawl = MedusaCrawl {
-    paths_to_crawl: vec![PathBuf::from("tmp3")],
-  };
-  let crawl_result = crawl.crawl_paths().await.expect("crawling failed");
-  println!("crawl_result = {:?}", crawl_result);
-  let crawled_zip = crawl_result.medusa_zip(MedusaZipOptions {
-    reproducibility: Reproducibility::Reproducible,
-  });
-  let crawled_output_path = PathBuf::from("asdf3.zip");
-  let crawled_output_file = OpenOptions::new()
-    .write(true)
-    .create(true)
-    .truncate(true)
-    .open(&crawled_output_path)
-    .expect("file open failed");
-  crawled_zip
-    .zip(crawled_output_file)
-    .await
-    .expect("zipping failed");
-  println!("wrote to: {}", crawled_output_path.display());
+  let Cli { command } = Cli::parse();
 
-  let zip_spec = MedusaZip {
-    input_paths: vec![
-      (PathBuf::from("tmp/asdf.txt"), "asdf.txt".to_string()),
-      (PathBuf::from("tmp/bsdf.txt"), "bsdf.txt".to_string()),
-      (PathBuf::from("tmp/a/b.txt"), "a/b.txt".to_string()),
-      (PathBuf::from("tmp/x/b.txt"), "x/b.txt".to_string()),
-    ],
-    options: MedusaZipOptions {
-      reproducibility: Reproducibility::Reproducible,
+  match command {
+    Command::Crawl { paths } => {
+      let crawl = MedusaCrawl {
+        paths_to_crawl: paths,
+      };
+      let crawl_result = crawl.crawl_paths().await.expect("crawling failed");
+      let crawl_json = serde_json::to_string(&crawl_result).expect("serialization failed");
+      println!("{}", crawl_json);
     },
-  };
-  let output_path = PathBuf::from("asdf2.zip");
-  let output_file = OpenOptions::new()
-    .write(true)
-    .create(true)
-    .truncate(true)
-    .open(&output_path)
-    .expect("file open failed");
+    Command::Zip { .. } => {
+      todo!("zip!");
+    },
+    Command::TempDemo => {
+      let crawl = MedusaCrawl {
+        paths_to_crawl: vec![PathBuf::from("tmp3")],
+      };
+      let crawl_result = crawl.crawl_paths().await.expect("crawling failed");
+      println!("crawl_result = {:?}", crawl_result);
+      let crawled_zip = crawl_result.medusa_zip(MedusaZipOptions {
+        reproducibility: Reproducibility::Reproducible,
+      });
+      let crawled_output_path = PathBuf::from("asdf3.zip");
+      let crawled_output_file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&crawled_output_path)
+        .expect("file open failed");
+      crawled_zip
+        .zip(crawled_output_file)
+        .await
+        .expect("zipping failed");
+      println!("wrote to: {}", crawled_output_path.display());
 
-  zip_spec.zip(output_file).await.expect("zipping failed");
-  println!("wrote to: {}", output_path.display());
+      let zip_spec = MedusaZip {
+        input_paths: vec![
+          (PathBuf::from("tmp/asdf.txt"), "asdf.txt".to_string()),
+          (PathBuf::from("tmp/bsdf.txt"), "bsdf.txt".to_string()),
+          (PathBuf::from("tmp/a/b.txt"), "a/b.txt".to_string()),
+          (PathBuf::from("tmp/x/b.txt"), "x/b.txt".to_string()),
+        ],
+        options: MedusaZipOptions {
+          reproducibility: Reproducibility::Reproducible,
+        },
+      };
+      let output_path = PathBuf::from("asdf2.zip");
+      let output_file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&output_path)
+        .expect("file open failed");
+
+      zip_spec.zip(output_file).await.expect("zipping failed");
+      println!("wrote to: {}", output_path.display());
+    },
+  }
 }

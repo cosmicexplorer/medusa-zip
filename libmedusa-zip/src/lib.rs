@@ -48,6 +48,7 @@
 use async_recursion::async_recursion;
 use displaydoc::Display;
 use futures::{future::try_join_all, stream::StreamExt};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
   fs,
@@ -307,7 +308,7 @@ pub enum MedusaCrawlError {
   CrawlFormat(#[from] MedusaCrawlFormatError),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ResolvedPath {
   /// The path *without* any symlink resolution.
   pub unresolved_path: PathBuf,
@@ -340,7 +341,7 @@ impl ResolvedPath {
   }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CrawlResult {
   pub real_file_paths: Vec<ResolvedPath>,
 }
