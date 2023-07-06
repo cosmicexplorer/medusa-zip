@@ -1,6 +1,6 @@
 /*
- * Description: Crawl file paths and produce zip files with some level of i/o and
- * compute parallelism.
+ * Description: Crawl file paths and produce zip files with some level of i/o
+ * and compute parallelism.
  *
  * Copyright (C) 2023 Danny McClanahan <dmcC2@hypnicjerk.ai>
  * SPDX-License-Identifier: Apache-2.0
@@ -8,7 +8,8 @@
  * Licensed under the Apache License, Version 2.0 (see LICENSE).
  */
 
-//! Crawl file paths and produce zip files with some level of i/o and compute parallelism.
+//! Crawl file paths and produce zip files with some level of i/o and compute
+//! parallelism.
 
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code. */
@@ -40,7 +41,7 @@
   clippy::len_without_is_empty,
   clippy::redundant_field_names,
   clippy::too_many_arguments,
-  clippy::single_component_path_imports,
+  clippy::single_component_path_imports
 )]
 /* Default isn't as big a deal as people seem to think it is. */
 #![allow(clippy::new_without_default, clippy::new_ret_no_self)]
@@ -59,11 +60,11 @@ mod cli {
 
     #[derive(Subcommand, Debug)]
     pub enum Command {
-      /// Write a JSON object to stdout which contains all the file paths under the top-level
-      /// `paths`.
+      /// Write a JSON object to stdout which contains all the file paths under
+      /// the top-level `paths`.
       Crawl { paths: Vec<PathBuf> },
-      /// Consume a JSON object from [`Self::Crawl`] over stdin and write those files into a zip
-      /// file at `output`.
+      /// Consume a JSON object from [`Self::Crawl`] over stdin and write those
+      /// files into a zip file at `output`.
       Zip {
         /// File path to write a zip to.
         output: PathBuf,
@@ -72,7 +73,8 @@ mod cli {
       },
     }
 
-    /// Crawl file paths and produce zip files with some level of i/o and compute parallelism.
+    /// Crawl file paths and produce zip files with some level of i/o and
+    /// compute parallelism.
     #[derive(Parser, Debug)]
     #[command(author, version, about, long_about = None)]
     pub struct Cli {
@@ -92,8 +94,10 @@ mod cli {
 
     use serde_json;
 
-    use std::fs::OpenOptions;
-    use std::io::{self, Read};
+    use std::{
+      fs::OpenOptions,
+      io::{self, Read},
+    };
 
     #[derive(Debug, Display, Error)]
     pub enum MedusaCliError {

@@ -39,7 +39,7 @@
   clippy::len_without_is_empty,
   clippy::redundant_field_names,
   clippy::too_many_arguments,
-  clippy::single_component_path_imports,
+  clippy::single_component_path_imports
 )]
 /* Default isn't as big a deal as people seem to think it is. */
 #![allow(clippy::new_without_default, clippy::new_ret_no_self)]
@@ -58,9 +58,11 @@ pub mod zip {
   };
   use zip::{self, result::ZipError, ZipArchive, ZipWriter};
 
-  use std::cmp;
-  use std::io::{Cursor, Seek, Write};
-  use std::path::PathBuf;
+  use std::{
+    cmp,
+    io::{Cursor, Seek, Write},
+    path::PathBuf,
+  };
 
   /// Allowed zip format quirks that we refuse to handle right now.
   #[derive(Debug, Display, Error)]
@@ -93,8 +95,8 @@ pub mod zip {
     /// All modification times for entries will be set to 1980-01-1.
     #[default]
     Reproducible,
-    /// Each file's modification time will be converted into a zip timestamp when it is entered into
-    /// the archive.
+    /// Each file's modification time will be converted into a zip timestamp
+    /// when it is entered into the archive.
     CurrentTime,
   }
 
@@ -124,9 +126,10 @@ pub mod zip {
     pub single_member_archive: Vec<u8>,
   }
 
-  /* Implement {Partial,}Ord to sort a vector of these by name without additional allocation, because
-   * Vec::sort_by_key() gets mad if the key possesses a lifetime, otherwise requiring the `name`
-   * string to be cloned. */
+  /* Implement {Partial,}Ord to sort a vector of these by name without
+   * additional allocation, because Vec::sort_by_key() gets mad if the key
+   * possesses a lifetime, otherwise requiring the `name` string to be
+   * cloned. */
   impl cmp::PartialOrd for IntermediateSingleZip {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
       self.name.partial_cmp(&other.name)
@@ -134,9 +137,7 @@ pub mod zip {
   }
 
   impl cmp::Ord for IntermediateSingleZip {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-      self.name.cmp(&other.name)
-    }
+    fn cmp(&self, other: &Self) -> cmp::Ordering { self.name.cmp(&other.name) }
   }
 
   struct IntermediateZipCollection(pub Vec<IntermediateSingleZip>);
@@ -168,7 +169,7 @@ pub mod zip {
       dir_components
     }
 
-    pub fn write_zip<W: Write + Seek>(
+    pub fn write_zip<W: Write+Seek>(
       self,
       medusa_zip_options: MedusaZipOptions,
       w: W,
@@ -178,9 +179,10 @@ pub mod zip {
       let MedusaZipOptions { reproducibility } = medusa_zip_options;
       let zip_options = reproducibility.zip_options();
 
-      /* Sort the resulting files so we can expect them to (mostly) be an inorder directory traversal.
-       * Directories with names less than top-level files will be sorted above those top-level files,
-       * which matches the behavior of python zipfile. */
+      /* Sort the resulting files so we can expect them to (mostly) be an inorder
+       * directory traversal. Directories with names less than top-level
+       * files will be sorted above those top-level files, which matches the
+       * behavior of python zipfile. */
       intermediate_zips.sort_unstable();
 
       /* Loop over each entry and write it to the output zip. */
@@ -192,11 +194,12 @@ pub mod zip {
       {
         Self::validate_name(name)?;
 
-        /* Split into directory components so we can add directory entries before any files from that
-         * directory. */
+        /* Split into directory components so we can add directory entries before any
+         * files from that directory. */
         let current_directory_components = Self::split_directory_components(name);
 
-        /* Find the directory components shared between the previous and next entries. */
+        /* Find the directory components shared between the previous and next
+         * entries. */
         let mut shared_components: usize = 0;
         for i in 0..cmp::min(
           previous_directory_components.len(),
@@ -207,11 +210,12 @@ pub mod zip {
           }
           shared_components += 1;
         }
-        /* If all components are shared, then we don't need to introduce any new directories. */
+        /* If all components are shared, then we don't need to introduce any new
+         * directories. */
         if shared_components < current_directory_components.len() {
           for final_component_index in shared_components..current_directory_components.len() {
-            /* Otherwise, we introduce a new directory for each new dir component of the current
-             * entry. */
+            /* Otherwise, we introduce a new directory for each new dir component of the
+             * current entry. */
             let cur_intermediate_components =
               &current_directory_components[..=final_component_index];
             assert!(!cur_intermediate_components.is_empty());
@@ -280,9 +284,7 @@ pub mod zip {
     }
 
     pub async fn zip<Output>(self, output: Output) -> Result<(), MedusaZipError>
-    where
-      Output: Write + Seek + Send + 'static,
-    {
+    where Output: Write+Seek+Send+'static {
       let Self {
         input_paths,
         options,
@@ -339,7 +341,8 @@ pub mod crawl {
   pub struct ResolvedPath {
     /// The path *without* any symlink resolution.
     pub unresolved_path: PathBuf,
-    /// The path *with* symlink resolution (may be the same, if the original path had no symlinks).
+    /// The path *with* symlink resolution (may be the same, if the original
+    /// path had no symlinks).
     pub resolved_path: PathBuf,
   }
 
@@ -504,7 +507,9 @@ pub use crawl::{CrawlResult, MedusaCrawl, MedusaCrawlError};
 
 /* #[cfg(test)] */
 /* mod test { */
-/*   use super::*; */
+/* use super::*; */
 
-/*   /\* use proptest::{prelude::*, strategy::Strategy}; *\/ */
+/* use proptest::{prelude::*, strategy::Strategy}; */
+/* } */
+/* use proptest::{prelude::*, strategy::Strategy}; */
 /* } */
