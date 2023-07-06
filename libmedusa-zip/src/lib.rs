@@ -86,8 +86,9 @@ pub enum MedusaZipError {
   ZipFormat(#[from] MedusaZipFormatError),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub enum Reproducibility {
+  #[default]
   Reproducible,
   CurrentTime,
 }
@@ -105,7 +106,7 @@ impl Reproducibility {
   }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct MedusaZipOptions {
   pub reproducibility: Reproducibility,
 }

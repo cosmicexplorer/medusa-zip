@@ -45,13 +45,63 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-use libmedusa_zip::{MedusaCrawl, MedusaZip, MedusaZipOptions, Reproducibility};
+use libmedusa_zip::{CrawlResult, MedusaCrawl, MedusaZip, MedusaZipOptions, Reproducibility};
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde_json;
 
 use std::fs::OpenOptions;
+use std::io::{self, Read};
 use std::path::PathBuf;
+
+#[derive(Clone, Debug, Default, ValueEnum)]
+enum CliReproducibility {
+  #[default]
+  Reproducible,
+  CurrentTime,
+}
+
+impl From<Reproducibility> for CliReproducibility {
+  fn from(r: Reproducibility) -> Self {
+    match r {
+      Reproducibility::Reproducible => Self::Reproducible,
+      Reproducibility::CurrentTime => Self::CurrentTime,
+    }
+  }
+}
+
+impl From<CliReproducibility> for Reproducibility {
+  fn from(r: CliReproducibility) -> Self {
+    match r {
+      CliReproducibility::Reproducible => Self::Reproducible,
+      CliReproducibility::CurrentTime => Self::CurrentTime,
+    }
+  }
+}
+
+#[derive(Args, Clone, Debug)]
+struct ZipOptions {
+  #[arg(value_enum, default_value_t, short, long)]
+  reproducibility: CliReproducibility,
+}
+
+impl From<MedusaZipOptions> for ZipOptions {
+  fn from(o: MedusaZipOptions) -> Self {
+    let MedusaZipOptions { reproducibility } = o;
+    Self {
+      reproducibility: reproducibility.into(),
+    }
+  }
+}
+
+impl From<ZipOptions> for MedusaZipOptions {
+  fn from(o: ZipOptions) -> Self {
+    let ZipOptions { reproducibility } = o;
+    Self {
+      reproducibility: reproducibility.into(),
+    }
+  }
+}
 
 #[derive(Subcommand, Debug)]
 enum Command {
@@ -59,10 +109,9 @@ enum Command {
     paths: Vec<PathBuf>,
   },
   Zip {
-    /* #[arg()] */
-    /* file_inputs: Vec<(PathBuf, String)>, */
-    file_inputs: Vec<PathBuf>,
     output: PathBuf,
+    #[command(flatten)]
+    options: ZipOptions,
   },
   TempDemo,
 }
@@ -84,11 +133,31 @@ async fn main() {
         paths_to_crawl: paths,
       };
       let crawl_result = crawl.crawl_paths().await.expect("crawling failed");
-      let crawl_json = serde_json::to_string(&crawl_result).expect("serialization failed");
+      let crawl_json = serde_json::to_string(&crawl_result).expect("serializing crawl failed");
+
+      /* Print json serialization to stdout. */
       println!("{}", crawl_json);
     },
-    Command::Zip { .. } => {
-      todo!("zip!");
+    Command::Zip { output, options } => {
+      /* Read json serialization from stdin. */
+      let mut input_json: Vec<u8> = Vec::new();
+      io::stdin()
+        .lock()
+        .read_to_end(&mut input_json)
+        .expect("reading stdin failed");
+      let crawl_result: CrawlResult =
+        serde_json::from_slice(&input_json).expect("deserializing crawl failed");
+      let crawled_zip = crawl_result.medusa_zip(options.into());
+
+      let output_file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&output)
+        .expect("output zip open failed");
+      crawled_zip.zip(output_file).await.expect("zipping failed");
+
+      eprintln!("wrote to: {}", output.display());
     },
     Command::TempDemo => {
       let crawl = MedusaCrawl {
