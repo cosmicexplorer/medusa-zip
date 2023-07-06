@@ -47,81 +47,90 @@
 
 use libmedusa_zip::{CrawlResult, MedusaCrawl, MedusaZip, MedusaZipOptions, Reproducibility};
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::Parser;
 use serde_json;
 
 use std::fs::OpenOptions;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
-#[derive(Clone, Debug, Default, ValueEnum)]
-enum CliReproducibility {
-  #[default]
-  Reproducible,
-  CurrentTime,
-}
+mod cli {
+  use libmedusa_zip::{MedusaZipOptions, Reproducibility};
 
-impl From<Reproducibility> for CliReproducibility {
-  fn from(r: Reproducibility) -> Self {
-    match r {
-      Reproducibility::Reproducible => Self::Reproducible,
-      Reproducibility::CurrentTime => Self::CurrentTime,
+  use clap::{Args, Parser, Subcommand, ValueEnum};
+
+  use std::path::PathBuf;
+
+  #[derive(Clone, Debug, Default, ValueEnum)]
+  pub enum CliReproducibility {
+    #[default]
+    Reproducible,
+    CurrentTime,
+  }
+
+  impl From<CliReproducibility> for Reproducibility {
+    fn from(r: CliReproducibility) -> Self {
+      match r {
+        CliReproducibility::Reproducible => Self::Reproducible,
+        CliReproducibility::CurrentTime => Self::CurrentTime,
+      }
     }
   }
-}
 
-impl From<CliReproducibility> for Reproducibility {
-  fn from(r: CliReproducibility) -> Self {
-    match r {
-      CliReproducibility::Reproducible => Self::Reproducible,
-      CliReproducibility::CurrentTime => Self::CurrentTime,
+  impl From<Reproducibility> for CliReproducibility {
+    fn from(r: Reproducibility) -> Self {
+      match r {
+        Reproducibility::Reproducible => Self::Reproducible,
+        Reproducibility::CurrentTime => Self::CurrentTime,
+      }
     }
   }
-}
 
-#[derive(Args, Clone, Debug)]
-struct ZipOptions {
-  #[arg(value_enum, default_value_t, short, long)]
-  reproducibility: CliReproducibility,
-}
+  #[derive(Args, Clone, Debug)]
+  pub struct ZipOptions {
+    #[arg(value_enum, default_value_t, short, long)]
+    reproducibility: CliReproducibility,
+  }
 
-impl From<MedusaZipOptions> for ZipOptions {
-  fn from(o: MedusaZipOptions) -> Self {
-    let MedusaZipOptions { reproducibility } = o;
-    Self {
-      reproducibility: reproducibility.into(),
+  impl From<ZipOptions> for MedusaZipOptions {
+    fn from(o: ZipOptions) -> Self {
+      let ZipOptions { reproducibility } = o;
+      Self {
+        reproducibility: reproducibility.into(),
+      }
     }
   }
-}
 
-impl From<ZipOptions> for MedusaZipOptions {
-  fn from(o: ZipOptions) -> Self {
-    let ZipOptions { reproducibility } = o;
-    Self {
-      reproducibility: reproducibility.into(),
+  impl From<MedusaZipOptions> for ZipOptions {
+    fn from(o: MedusaZipOptions) -> Self {
+      let MedusaZipOptions { reproducibility } = o;
+      Self {
+        reproducibility: reproducibility.into(),
+      }
     }
   }
-}
 
-#[derive(Subcommand, Debug)]
-enum Command {
-  Crawl {
-    paths: Vec<PathBuf>,
-  },
-  Zip {
-    output: PathBuf,
-    #[command(flatten)]
-    options: ZipOptions,
-  },
-  TempDemo,
-}
+  #[derive(Subcommand, Debug)]
+  pub enum Command {
+    Crawl {
+      paths: Vec<PathBuf>,
+    },
+    Zip {
+      output: PathBuf,
+      #[command(flatten)]
+      options: ZipOptions,
+    },
+    TempDemo,
+  }
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-  #[command(subcommand)]
-  command: Command,
+  #[derive(Parser, Debug)]
+  #[command(author, version, about, long_about = None)]
+  pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+  }
 }
+use cli::*;
 
 #[tokio::main]
 async fn main() {
