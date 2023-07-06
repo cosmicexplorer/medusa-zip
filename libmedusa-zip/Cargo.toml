@@ -8,6 +8,7 @@ edition                 = "2021"
 
 [dependencies]
 async-recursion         = "1"
+clap                    = { version = "4", features = ["derive"] }
 displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
 futures                 = "0.3.28"
 serde                   = { version = "1", features = ["derive"] }

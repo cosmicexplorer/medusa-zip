@@ -45,70 +45,20 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-use libmedusa_zip::{CrawlResult, MedusaCrawl, MedusaZip, MedusaZipOptions, Reproducibility};
+use libmedusa_zip::{CrawlResult, MedusaCrawl};
 
 use clap::Parser;
 use serde_json;
 
 use std::fs::OpenOptions;
 use std::io::{self, Read};
-use std::path::PathBuf;
 
 mod cli {
-  use libmedusa_zip::{MedusaZipOptions, Reproducibility};
+  use libmedusa_zip::MedusaZipOptions;
 
-  use clap::{Args, Parser, Subcommand, ValueEnum};
+  use clap::{Parser, Subcommand};
 
   use std::path::PathBuf;
-
-  #[derive(Clone, Debug, Default, ValueEnum)]
-  pub enum CliReproducibility {
-    #[default]
-    Reproducible,
-    CurrentTime,
-  }
-
-  impl From<CliReproducibility> for Reproducibility {
-    fn from(r: CliReproducibility) -> Self {
-      match r {
-        CliReproducibility::Reproducible => Self::Reproducible,
-        CliReproducibility::CurrentTime => Self::CurrentTime,
-      }
-    }
-  }
-
-  impl From<Reproducibility> for CliReproducibility {
-    fn from(r: Reproducibility) -> Self {
-      match r {
-        Reproducibility::Reproducible => Self::Reproducible,
-        Reproducibility::CurrentTime => Self::CurrentTime,
-      }
-    }
-  }
-
-  #[derive(Args, Clone, Debug)]
-  pub struct ZipOptions {
-    #[arg(value_enum, default_value_t, short, long)]
-    reproducibility: CliReproducibility,
-  }
-
-  impl From<ZipOptions> for MedusaZipOptions {
-    fn from(o: ZipOptions) -> Self {
-      let ZipOptions { reproducibility } = o;
-      Self {
-        reproducibility: reproducibility.into(),
-      }
-    }
-  }
-
-  impl From<MedusaZipOptions> for ZipOptions {
-    fn from(o: MedusaZipOptions) -> Self {
-      let MedusaZipOptions { reproducibility } = o;
-      Self {
-        reproducibility: reproducibility.into(),
-      }
-    }
-  }
 
   #[derive(Subcommand, Debug)]
   pub enum Command {
@@ -118,9 +68,8 @@ mod cli {
     Zip {
       output: PathBuf,
       #[command(flatten)]
-      options: ZipOptions,
+      options: MedusaZipOptions,
     },
-    TempDemo,
   }
 
   #[derive(Parser, Debug)]
@@ -167,50 +116,6 @@ async fn main() {
       crawled_zip.zip(output_file).await.expect("zipping failed");
 
       eprintln!("wrote to: {}", output.display());
-    },
-    Command::TempDemo => {
-      let crawl = MedusaCrawl {
-        paths_to_crawl: vec![PathBuf::from("tmp3")],
-      };
-      let crawl_result = crawl.crawl_paths().await.expect("crawling failed");
-      println!("crawl_result = {:?}", crawl_result);
-      let crawled_zip = crawl_result.medusa_zip(MedusaZipOptions {
-        reproducibility: Reproducibility::Reproducible,
-      });
-      let crawled_output_path = PathBuf::from("asdf3.zip");
-      let crawled_output_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&crawled_output_path)
-        .expect("file open failed");
-      crawled_zip
-        .zip(crawled_output_file)
-        .await
-        .expect("zipping failed");
-      println!("wrote to: {}", crawled_output_path.display());
-
-      let zip_spec = MedusaZip {
-        input_paths: vec![
-          (PathBuf::from("tmp/asdf.txt"), "asdf.txt".to_string()),
-          (PathBuf::from("tmp/bsdf.txt"), "bsdf.txt".to_string()),
-          (PathBuf::from("tmp/a/b.txt"), "a/b.txt".to_string()),
-          (PathBuf::from("tmp/x/b.txt"), "x/b.txt".to_string()),
-        ],
-        options: MedusaZipOptions {
-          reproducibility: Reproducibility::Reproducible,
-        },
-      };
-      let output_path = PathBuf::from("asdf2.zip");
-      let output_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&output_path)
-        .expect("file open failed");
-
-      zip_spec.zip(output_file).await.expect("zipping failed");
-      println!("wrote to: {}", output_path.display());
     },
   }
 }

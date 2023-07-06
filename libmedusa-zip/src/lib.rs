@@ -46,6 +46,7 @@
 #![allow(clippy::mutex_atomic)]
 
 use async_recursion::async_recursion;
+use clap::{Args, ValueEnum};
 use displaydoc::Display;
 use futures::{future::try_join_all, stream::StreamExt};
 use serde::{Deserialize, Serialize};
@@ -86,7 +87,7 @@ pub enum MedusaZipError {
   ZipFormat(#[from] MedusaZipFormatError),
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Debug, ValueEnum)]
 pub enum Reproducibility {
   #[default]
   Reproducible,
@@ -106,8 +107,9 @@ impl Reproducibility {
   }
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Debug, Args)]
 pub struct MedusaZipOptions {
+  #[arg(value_enum, default_value_t, short, long)]
   pub reproducibility: Reproducibility,
 }
 

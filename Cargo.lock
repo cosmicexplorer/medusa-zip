@@ -590,6 +590,7 @@ name = "libmedusa-zip"
 version = "0.0.0"
 dependencies = [
  "async-recursion",
+ "clap",
  "displaydoc",
  "futures",
  "proptest",
