@@ -1223,6 +1223,7 @@ checksum = "1a515f5799fe4961cb532f983ce2b23082366b898e52ffbce459c86f67c8378a"
 [[package]]
 name = "zip"
 version = "0.6.6"
+source = "git+https://github.com/cosmicexplorer/zip?rev=60354fa3969a36a1f1d3bc31e646567ca43d189f#60354fa3969a36a1f1d3bc31e646567ca43d189f"
 dependencies = [
  "aes",
  "byteorder",
