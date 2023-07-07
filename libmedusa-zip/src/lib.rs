@@ -145,7 +145,7 @@ pub mod destination {
   }
 
   impl DestinationBehavior {
-    pub fn extract(self, path: &Path) -> Result<ZipWriter<fs::File>, ZipError> {
+    pub fn initialize(self, path: &Path) -> Result<ZipWriter<fs::File>, ZipError> {
       let (file, with_append) = match self {
         Self::AlwaysTruncate => {
           let f = fs::OpenOptions::new()

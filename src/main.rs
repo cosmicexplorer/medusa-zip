@@ -72,7 +72,11 @@ mod cli {
     pub enum Command {
       /// Write a JSON object to stdout which contains all the file paths under
       /// the top-level `paths`.
-      Crawl { paths: Vec<PathBuf> },
+      Crawl {
+        /// ???
+        paths: Vec<PathBuf>
+        /* TODO: ignores */
+      },
       /// Consume a JSON object from [`Self::Crawl`] over stdin and write those
       /// files into a zip file at `output`.
       Zip {
@@ -85,6 +89,8 @@ mod cli {
       Merge {
         #[command(flatten)]
         output: Output,
+        /// ???
+        sources: Vec<PathBuf>,
       },
     }
 
@@ -108,7 +114,7 @@ mod cli {
 
     use displaydoc::Display;
     use thiserror::Error;
-    use zip::{result::ZipError, write::ZipWriter};
+    use zip::{result::ZipError, read::ZipArchive, write::ZipWriter};
 
     use serde_json;
 
@@ -118,9 +124,9 @@ mod cli {
     };
 
     impl Output {
-      pub fn extract(self) -> Result<ZipWriter<fs::File>, ZipError> {
+      pub fn initialize(self) -> Result<ZipWriter<fs::File>, ZipError> {
         let Self { output, behavior } = self;
-        behavior.extract(&output)
+        behavior.initialize(&output)
       }
     }
 
@@ -157,7 +163,7 @@ mod cli {
           },
           Command::Zip { output, options } => {
             /* Initialize output stream. */
-            let output_zip = output.extract()?;
+            let output_zip = output.initialize()?;
 
             /* Read json serialization from stdin. */
             let mut input_json: Vec<u8> = Vec::new();
@@ -167,9 +173,22 @@ mod cli {
             /* Apply options from command line to produce a zip spec. */
             let crawled_zip = crawl_result.medusa_zip(options)?;
 
+            /* Do the parallel zip!!! */
             crawled_zip.zip(output_zip).await?;
           },
-          Command::Merge { output } => {},
+          Command::Merge { output, sources } => {
+            /* Initialize output stream. */
+            let mut output_zip = output.initialize()?;
+
+            /* Copy over constituent zips into current. */
+            for source_zip_path in sources.into_iter() {
+              let source_file = fs::OpenOptions::new().read(true).open(&source_zip_path)?;
+              let source_zip = ZipArchive::new(source_file)?;
+              output_zip.merge_archive(source_zip)?;
+            }
+
+            output_zip.finish()?;
+          },
         }
 
         Ok(())
