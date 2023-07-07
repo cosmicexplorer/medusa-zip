@@ -87,7 +87,9 @@ mod cli {
   mod run {
     use super::{Cli, Command};
 
-    use libmedusa_zip::{CrawlResult, MedusaCrawl, MedusaCrawlError, MedusaZipError};
+    use libmedusa_zip::{
+      CrawlResult, MedusaCrawl, MedusaCrawlError, MedusaNameFormatError, MedusaZipError,
+    };
 
     use displaydoc::Display;
     use thiserror::Error;
@@ -105,6 +107,8 @@ mod cli {
       MedusaZip(#[from] MedusaZipError),
       /// error performing parallel crawl: {0}
       MedusaCrawl(#[from] MedusaCrawlError),
+      /// error in zip name format: {0}
+      MedusaNameFormat(#[from] MedusaNameFormatError),
       /// error performing top-level i/o: {0}
       Io(#[from] io::Error),
       /// error de/serializing json: {0}
@@ -132,7 +136,7 @@ mod cli {
             io::stdin().lock().read_to_end(&mut input_json)?;
             let crawl_result: CrawlResult = serde_json::from_slice(&input_json)?;
             /* Apply options from command line to produce a zip spec. */
-            let crawled_zip = crawl_result.medusa_zip(options);
+            let crawled_zip = crawl_result.medusa_zip(options)?;
 
             let output_file = OpenOptions::new()
               .write(true)

@@ -46,36 +46,102 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
+use displaydoc::Display;
+use thiserror::Error;
+
+use std::cmp;
+use std::path::PathBuf;
+
+/// Allowed zip format quirks that we refuse to handle right now.
+#[derive(Debug, Display, Error)]
+pub enum MedusaNameFormatError {
+  /// name is empty
+  NameIsEmpty,
+  /// name starts with '/': {0}
+  NameStartsWithSlash(String),
+  /// name ends with '/': {0}
+  NameEndsWithSlash(String),
+  /// name has '//': {0}
+  NameHasDoubleSlash(String),
+}
+
+#[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
+pub struct EntryName(pub String);
+
+impl EntryName {
+  pub fn validate(name: String) -> Result<Self, MedusaNameFormatError> {
+    if name.is_empty() {
+      Err(MedusaNameFormatError::NameIsEmpty)
+    } else if name.starts_with('/') {
+      /* We won't produce any non-relative paths. */
+      Err(MedusaNameFormatError::NameStartsWithSlash(name.to_string()))
+    } else if name.ends_with('/') {
+      /* We only enter file names. */
+      Err(MedusaNameFormatError::NameEndsWithSlash(name.to_string()))
+    } else if name.contains("//") {
+      Err(MedusaNameFormatError::NameHasDoubleSlash(name.to_string()))
+    } else {
+      Ok(Self(name))
+    }
+  }
+
+  pub fn split_directory_components(&self) -> Vec<String> {
+    let Self(name) = self;
+    let mut dir_components: Vec<String> = name.split('/').map(|s| s.to_string()).collect();
+    /* Discard the file name itself. */
+    dir_components
+      .pop()
+      .expect("a split should always be non-empty");
+
+    dir_components
+  }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileSource {
+  pub name: EntryName,
+  pub source: PathBuf,
+}
+
+/* Implement {Partial,}Ord to sort a vector of these by name without
+ * additional allocation, because Vec::sort_by_key() gets mad if the key
+ * possesses a lifetime, otherwise requiring the `name` string to be
+ * cloned. */
+impl cmp::PartialOrd for FileSource {
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+    self.name.partial_cmp(&other.name)
+  }
+}
+
+impl cmp::Ord for FileSource {
+  fn cmp(&self, other: &Self) -> cmp::Ordering {
+    self.name.cmp(&other.name)
+  }
+}
+
 pub mod zip {
+  use super::{EntryName, FileSource};
+
   use clap::{Args, ValueEnum};
   use displaydoc::Display;
-  use futures::future::try_join_all;
+  use futures::{pin_mut, stream::StreamExt, try_join};
+  use parking_lot::Mutex;
   use thiserror::Error;
   use tokio::{
     fs,
     io::{self, AsyncReadExt},
+    sync::mpsc,
     task,
   };
+  use tokio_stream::wrappers::ReceiverStream;
   use zip::{self, result::ZipError, ZipArchive, ZipWriter};
 
   use std::{
     cmp,
     io::{Cursor, Seek, Write},
     path::PathBuf,
+    sync::Arc,
   };
-
-  /// Allowed zip format quirks that we refuse to handle right now.
-  #[derive(Debug, Display, Error)]
-  pub enum MedusaZipFormatError {
-    /// name is empty
-    NameIsEmpty,
-    /// name starts with '/': {0}
-    NameStartsWithSlash(String),
-    /// name ends with '/': {0}
-    NameEndsWithSlash(String),
-    /// name has '//': {0}
-    NameHasDoubleSlash(String),
-  }
 
   #[derive(Debug, Display, Error)]
   pub enum MedusaInputReadError {
@@ -92,10 +158,12 @@ pub mod zip {
     Zip(#[from] ZipError),
     /// join error: {0}
     Join(#[from] task::JoinError),
-    /// zip format error: {0}
-    ZipFormat(#[from] MedusaZipFormatError),
     /// error reading input file: {0}
     InputRead(#[from] MedusaInputReadError),
+    /// error sending initial input: {0:?}
+    InitialSend(#[from] mpsc::error::SendError<ZipEntrySpecification>),
+    /// error sending intermediate input: {0:?}
+    IntermediateSend(#[from] mpsc::error::SendError<IntermediateSingleEntry>),
   }
 
   #[derive(Copy, Clone, Default, Debug, ValueEnum)]
@@ -128,85 +196,27 @@ pub mod zip {
     pub reproducibility: Reproducibility,
   }
 
-  #[derive(PartialEq, Eq)]
-  struct IntermediateSingleZip {
-    pub name: String,
-    pub single_member_archive: Vec<u8>,
+  pub enum ZipEntrySpecification {
+    File(FileSource),
+    Directory(EntryName),
   }
 
-  /* Implement {Partial,}Ord to sort a vector of these by name without
-   * additional allocation, because Vec::sort_by_key() gets mad if the key
-   * possesses a lifetime, otherwise requiring the `name` string to be
-   * cloned. */
-  impl cmp::PartialOrd for IntermediateSingleZip {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-      self.name.partial_cmp(&other.name)
-    }
-  }
+  struct EntrySpecificationList(pub Vec<ZipEntrySpecification>);
 
-  impl cmp::Ord for IntermediateSingleZip {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-      self.name.cmp(&other.name)
-    }
-  }
-
-  struct IntermediateZipCollection(pub Vec<IntermediateSingleZip>);
-
-  impl IntermediateZipCollection {
-    fn validate_name(name: &str) -> Result<(), MedusaZipFormatError> {
-      if name.is_empty() {
-        Err(MedusaZipFormatError::NameIsEmpty)
-      } else if name.starts_with('/') {
-        /* We won't produce any non-relative paths. */
-        Err(MedusaZipFormatError::NameStartsWithSlash(name.to_string()))
-      } else if name.ends_with('/') {
-        /* We only enter file names. */
-        Err(MedusaZipFormatError::NameEndsWithSlash(name.to_string()))
-      } else if name.contains("//") {
-        Err(MedusaZipFormatError::NameHasDoubleSlash(name.to_string()))
-      } else {
-        Ok(())
-      }
-    }
-
-    fn split_directory_components(name: &str) -> Vec<&str> {
-      let mut dir_components: Vec<&str> = name.split('/').collect();
-      /* Discard the file name itself. */
-      dir_components
-        .pop()
-        .expect("a split should always be non-empty");
-
-      dir_components
-    }
-
-    pub fn write_zip<W: Write + Seek>(
-      self,
-      medusa_zip_options: MedusaZipOptions,
-      w: W,
-    ) -> Result<(), MedusaZipError> {
-      let Self(mut intermediate_zips) = self;
-      let mut output_zip = ZipWriter::new(w);
-      let MedusaZipOptions { reproducibility } = medusa_zip_options;
-      let zip_options = reproducibility.zip_options();
-
+  impl EntrySpecificationList {
+    pub fn from_file_specs(mut specs: Vec<FileSource>) -> Self {
       /* Sort the resulting files so we can expect them to (mostly) be an inorder
        * directory traversal. Directories with names less than top-level
-       * files will be sorted above those top-level files, which matches the
-       * behavior of python zipfile. */
-      intermediate_zips.sort_unstable();
+       * files will be sorted above those top-level files, which matches pex's Chroot behavior. */
+      specs.sort_unstable();
+      /* TODO: check for duplicate names? */
 
-      /* Loop over each entry and write it to the output zip. */
-      let mut previous_directory_components: Vec<&str> = Vec::new();
-      for IntermediateSingleZip {
-        name,
-        single_member_archive,
-      } in intermediate_zips.iter()
-      {
-        Self::validate_name(name)?;
-
+      let mut ret: Vec<ZipEntrySpecification> = Vec::new();
+      let mut previous_directory_components: Vec<String> = Vec::new();
+      for FileSource { source, name } in specs.into_iter() {
         /* Split into directory components so we can add directory entries before any
          * files from that directory. */
-        let current_directory_components = Self::split_directory_components(name);
+        let current_directory_components = name.split_directory_components();
 
         /* Find the directory components shared between the previous and next
          * entries. */
@@ -230,93 +240,156 @@ pub mod zip {
               &current_directory_components[..=final_component_index];
             assert!(!cur_intermediate_components.is_empty());
             let cur_intermediate_directory: String = cur_intermediate_components.join("/");
-            output_zip.add_directory(&cur_intermediate_directory, zip_options)?;
+
+            let intermediate_dir = EntryName::validate(cur_intermediate_directory)
+              .expect("constructed virtual directory should be fine");
+            ret.push(ZipEntrySpecification::Directory(intermediate_dir));
           }
         }
         /* Set the "previous" dir components to the components of the current entry. */
         previous_directory_components = current_directory_components;
 
         /* Finally we can just write the actual file now! */
-        let mut single_member_zip = ZipArchive::new(Cursor::new(single_member_archive))?;
-        /* TODO: can we use .by_index_raw(0) instead? */
-        let member = single_member_zip.by_name(name)?;
-        output_zip.raw_copy_file(member)?;
+        ret.push(ZipEntrySpecification::File(FileSource { source, name }));
       }
 
-      output_zip.finish()?;
+      Self(ret)
+    }
+  }
 
-      Ok(())
+  pub enum IntermediateSingleEntry {
+    File(EntryName, Vec<u8>),
+    Directory(EntryName),
+  }
+
+  impl IntermediateSingleEntry {
+    pub async fn zip_single(
+      entry: ZipEntrySpecification,
+      zip_options: zip::write::FileOptions,
+    ) -> Result<Self, MedusaZipError> {
+      match entry {
+        ZipEntrySpecification::Directory(name) => Ok(Self::Directory(name)),
+        ZipEntrySpecification::File(FileSource { name, source }) => {
+          let mut input_file_contents = Vec::new();
+          fs::OpenOptions::new()
+            .read(true)
+            .open(&source)
+            .await
+            .map_err(|e| MedusaInputReadError::SourceNotFound(source, e))?
+            .read_to_end(&mut input_file_contents)
+            .await?;
+
+          let output_name = name.clone();
+          /* TODO: consider async-zip crate at https://docs.rs/async_zip/latest/async_zip/ as well! */
+          let output_zip = task::spawn_blocking(move || {
+            let mut output = Cursor::new(Vec::new());
+            {
+              let mut out_zip = ZipWriter::new(&mut output);
+
+              let EntryName(name) = output_name;
+              out_zip.start_file(&name, zip_options)?;
+              out_zip.write_all(&input_file_contents)?;
+
+              out_zip.finish()?;
+            }
+            Ok::<Vec<u8>, MedusaZipError>(output.into_inner())
+          })
+          .await??;
+
+          Ok(Self::File(name, output_zip))
+        },
+      }
     }
   }
 
   pub struct MedusaZip {
-    pub input_paths: Vec<(PathBuf, String)>,
+    pub input_files: Vec<FileSource>,
     pub options: MedusaZipOptions,
   }
 
   impl MedusaZip {
-    async fn zip_single(
-      input_path: PathBuf,
-      output_name: String,
-      medusa_zip_options: MedusaZipOptions,
-    ) -> Result<IntermediateSingleZip, MedusaZipError> {
-      let mut input_file_contents = Vec::new();
-      let MedusaZipOptions { reproducibility } = medusa_zip_options;
-      fs::OpenOptions::new()
-        .read(true)
-        .open(&input_path)
-        .await
-        .map_err(|e| MedusaInputReadError::SourceNotFound(input_path, e))?
-        .read_to_end(&mut input_file_contents)
-        .await?;
-
-      let zip_options = reproducibility.zip_options();
-
-      let name = output_name.clone();
-      /* TODO: consider async-zip crate at https://docs.rs/async_zip/latest/async_zip/ as well! */
-      let output_zip = task::spawn_blocking(move || {
-        let mut output = Cursor::new(Vec::new());
-        {
-          let mut out_zip = ZipWriter::new(&mut output);
-
-          out_zip.start_file(&output_name, zip_options)?;
-          out_zip.write_all(&input_file_contents)?;
-
-          out_zip.finish()?;
-        }
-        Ok::<Vec<u8>, MedusaZipError>(output.into_inner())
-      })
-      .await??;
-
-      Ok(IntermediateSingleZip {
-        name,
-        single_member_archive: output_zip,
-      })
-    }
-
     pub async fn zip<Output>(self, output: Output) -> Result<(), MedusaZipError>
     where
       Output: Write + Seek + Send + 'static,
     {
       let Self {
-        input_paths,
+        input_files,
         options,
       } = self;
+      let MedusaZipOptions { reproducibility } = options;
+      let zip_options = reproducibility.zip_options();
 
-      let intermediate_zips: Vec<IntermediateSingleZip> = try_join_all(
-        input_paths
-          .into_iter()
-          .map(|(input_path, output_name)| Self::zip_single(input_path, output_name, options)),
-      )
-      .await?;
-      let intermediate_zips = IntermediateZipCollection(intermediate_zips);
+      let EntrySpecificationList(entries) = EntrySpecificationList::from_file_specs(input_files);
 
-      task::spawn_blocking(move || {
-        intermediate_zips.write_zip(options, output)?;
+      let (unprocessed_tx, unprocessed_rx) = mpsc::channel::<ZipEntrySpecification>(2000);
+      let unprocessed_entries = ReceiverStream::new(unprocessed_rx);
+      /* Send these into the channel and block until they're done, but don't wait for it to join. */
+      let initial_send = task::spawn(async move {
+        for entry in entries.into_iter() {
+          unprocessed_tx.send(entry).await?;
+        }
+        Ok::<(), MedusaZipError>(())
+      });
+
+      let (compressed_tx, compressed_rx) = mpsc::channel::<IntermediateSingleEntry>(40000);
+      let compressed_entries = ReceiverStream::new(compressed_rx);
+      /* Compress individual entries. */
+      let compress_send = task::spawn(async move {
+        let process_stream = unprocessed_entries.then(|unprocessed_entry| async move {
+          IntermediateSingleEntry::zip_single(unprocessed_entry, zip_options).await
+        });
+        pin_mut!(process_stream);
+        while let Some(compressed_entry) = process_stream.next().await {
+          compressed_tx.send(compressed_entry?).await?;
+        }
+        Ok::<(), MedusaZipError>(())
+      });
+
+      /* Write output zip by reconstituting individual entries. */
+      let zip_write = task::spawn(async move {
+        /* TODO: this all runs sequentially in the same thread, so it shouldn't need to wrap it in
+         * a mutex, but the overhead is pretty low anyway so it probably doesn't matter. */
+        let output_zip = Arc::new(Mutex::new(ZipWriter::new(output)));
+
+        pin_mut!(compressed_entries);
+        while let Some(compressed_entry) = compressed_entries.next().await {
+          let output_zip = output_zip.clone();
+          task::spawn_blocking(move || {
+            match compressed_entry {
+              IntermediateSingleEntry::Directory(EntryName(name)) => {
+                output_zip.lock().add_directory(&name, zip_options)?;
+              },
+              IntermediateSingleEntry::File(EntryName(name), single_member_archive) => {
+                let mut single_member_archive =
+                  ZipArchive::new(Cursor::new(single_member_archive))?;
+                /* TODO: can we use .by_index_raw(0) instead? */
+                let member = single_member_archive.by_name(&name)?;
+                output_zip.lock().raw_copy_file(member)?;
+              },
+            }
+            Ok::<(), ZipError>(())
+          })
+          .await??;
+        }
+
+        task::spawn_blocking(move || {
+          output_zip.lock().finish()?;
+          Ok::<(), ZipError>(())
+        })
+        .await??;
 
         Ok::<(), MedusaZipError>(())
-      })
-      .await??;
+      });
+
+      /* All of these futures are contained within a task::spawn and therefore a JoinHandle, and
+       * require an additional unwrapping. */
+      {
+        let (initial_send, compress_send, zip_write) =
+          try_join!(initial_send, compress_send, zip_write)?;
+        initial_send?;
+        compress_send?;
+        zip_write?;
+      }
       Ok(())
     }
   }
@@ -324,7 +397,7 @@ pub mod zip {
 pub use crate::zip::{MedusaZip, MedusaZipError, MedusaZipOptions, Reproducibility};
 
 pub mod crawl {
-  use super::{MedusaZip, MedusaZipOptions};
+  use super::{EntryName, FileSource, MedusaNameFormatError, MedusaZip, MedusaZipOptions};
 
   use async_recursion::async_recursion;
   use displaydoc::Display;
@@ -400,9 +473,9 @@ pub mod crawl {
       }
     }
 
-    pub fn medusa_zip(self, options: MedusaZipOptions) -> MedusaZip {
+    pub fn medusa_zip(self, options: MedusaZipOptions) -> Result<MedusaZip, MedusaNameFormatError> {
       let Self { real_file_paths } = self;
-      let input_paths: Vec<(PathBuf, String)> = real_file_paths
+      let input_files: Vec<FileSource> = real_file_paths
         .into_iter()
         .map(
           |ResolvedPath {
@@ -413,14 +486,17 @@ pub mod crawl {
               .into_os_string()
               .into_string()
               .expect("expected valid unicode path");
-            (resolved_path, name)
+            Ok(FileSource {
+              name: EntryName::validate(name)?,
+              source: resolved_path,
+            })
           },
         )
-        .collect();
-      MedusaZip {
-        input_paths,
+        .collect::<Result<Vec<FileSource>, _>>()?;
+      Ok(MedusaZip {
+        input_files,
         options,
-      }
+      })
     }
   }
 
