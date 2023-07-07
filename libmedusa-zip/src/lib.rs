@@ -337,7 +337,7 @@ pub mod zip {
       let compress_send = task::spawn(async move {
         let process_stream =
           unprocessed_entries
-            .ready_chunks(2000)
+            .ready_chunks(20000)
             .then(|unprocessed_entries| async move {
               try_join_all(
                 unprocessed_entries
@@ -361,7 +361,7 @@ pub mod zip {
          * a mutex, but the overhead is pretty low anyway so it probably doesn't matter. */
         let output_zip = Arc::new(Mutex::new(ZipWriter::new(output)));
 
-        let compressed_entries = compressed_entries.ready_chunks(4000);
+        let compressed_entries = compressed_entries.ready_chunks(100000);
         pin_mut!(compressed_entries);
         while let Some(compressed_entries) = compressed_entries.next().await {
           let output_zip = output_zip.clone();
