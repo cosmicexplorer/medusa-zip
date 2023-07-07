@@ -52,7 +52,7 @@ use clap::Parser as _;
 
 mod cli {
   mod args {
-    use libmedusa_zip::MedusaZipOptions;
+    use libmedusa_zip::{DestinationBehavior, MedusaZipOptions};
 
     use clap::{Args, Parser, Subcommand};
 
@@ -61,8 +61,11 @@ mod cli {
     #[derive(Args, Debug)]
     pub struct Output {
       /// File path to write a zip to.
-      #[arg(short, long, default_value = None)]
-      pub output: Option<PathBuf>,
+      #[arg(short, long)]
+      pub output: PathBuf,
+      /// How to initialize the zip file path to write results to.
+      #[arg(value_enum, short, long, default_value_t)]
+      pub behavior: DestinationBehavior,
     }
 
     #[derive(Subcommand, Debug)]
@@ -105,93 +108,19 @@ mod cli {
 
     use displaydoc::Display;
     use thiserror::Error;
+    use zip::{result::ZipError, write::ZipWriter};
 
     use serde_json;
 
     use std::{
-      fs::{self, OpenOptions},
-      io::{self, Cursor, Read, Seek, Write},
+      fs,
+      io::{self, Read},
     };
 
-    pub enum OutputStream {
-      File(fs::File),
-      Stdout(Cursor<Vec<u8>>),
-    }
-
-    impl OutputStream {
-      pub fn from_args(o: Output) -> Result<Self, io::Error> {
-        let Output { output } = o;
-        match output {
-          None => Ok(Self::Stdout(Cursor::new(Vec::new()))),
-          Some(path) => Ok(Self::File(
-            OpenOptions::new()
-              .write(true)
-              .create(true)
-              .append(true)
-              .open(&path)?,
-          )),
-        }
-      }
-    }
-
-    impl io::Read for OutputStream {
-      fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-          Self::File(f) => f.read(buf),
-          Self::Stdout(c) => c.read(buf),
-        }
-      }
-
-      fn read_vectored(&mut self, bufs: &mut [io::IoSliceMut<'_>]) -> io::Result<usize> {
-        match self {
-          Self::File(f) => f.read_vectored(bufs),
-          Self::Stdout(c) => c.read_vectored(bufs),
-        }
-      }
-    }
-
-    impl io::Write for OutputStream {
-      fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self {
-          Self::File(f) => f.write(buf),
-          Self::Stdout(c) => c.write(buf),
-        }
-      }
-
-      fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
-        match self {
-          Self::File(f) => f.write_vectored(bufs),
-          Self::Stdout(c) => c.write_vectored(bufs),
-        }
-      }
-
-      fn flush(&mut self) -> io::Result<()> {
-        match self {
-          Self::File(f) => f.flush(),
-          Self::Stdout(c) => c.flush(),
-        }
-      }
-    }
-
-    impl io::Seek for OutputStream {
-      fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
-        match self {
-          Self::File(f) => f.seek(pos),
-          Self::Stdout(c) => c.seek(pos),
-        }
-      }
-    }
-
-    impl Drop for OutputStream {
-      fn drop(&mut self) {
-        match self {
-          Self::Stdout(c) => {
-            c.rewind().expect("error rewinding during drop");
-            let mut stdout = io::stdout().lock();
-            io::copy(c, &mut stdout).expect("error copying to stdout during drop");
-          },
-          _ => (),
-        }
+    impl Output {
+      pub fn extract(self) -> Result<ZipWriter<fs::File>, ZipError> {
+        let Self { output, behavior } = self;
+        behavior.extract(&output)
       }
     }
 
@@ -207,6 +136,8 @@ mod cli {
       Io(#[from] io::Error),
       /// error de/serializing json: {0}
       Json(#[from] serde_json::Error),
+      /// error creating output zip file: {0}
+      OutputZip(#[from] ZipError),
     }
 
     impl Cli {
@@ -225,8 +156,8 @@ mod cli {
             println!("{}", crawl_json);
           },
           Command::Zip { output, options } => {
-            /* Initialize output file. */
-            let output_file = OutputStream::from_args(output)?;
+            /* Initialize output stream. */
+            let output_zip = output.extract()?;
 
             /* Read json serialization from stdin. */
             let mut input_json: Vec<u8> = Vec::new();
@@ -236,7 +167,7 @@ mod cli {
             /* Apply options from command line to produce a zip spec. */
             let crawled_zip = crawl_result.medusa_zip(options)?;
 
-            crawled_zip.zip(output_file).await?;
+            crawled_zip.zip(output_zip).await?;
           },
           Command::Merge { output } => {},
         }
