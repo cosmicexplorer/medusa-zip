@@ -124,7 +124,7 @@ pub mod zip {
 
   use clap::{Args, ValueEnum};
   use displaydoc::Display;
-  use futures::{pin_mut, stream::StreamExt, try_join};
+  use futures::{future::try_join_all, pin_mut, stream::StreamExt, try_join};
   use parking_lot::Mutex;
   use thiserror::Error;
   use tokio::{
@@ -133,7 +133,7 @@ pub mod zip {
     sync::mpsc,
     task,
   };
-  use tokio_stream::wrappers::ReceiverStream;
+  use tokio_stream::wrappers::UnboundedReceiverStream;
   use zip::{self, result::ZipError, ZipArchive, ZipWriter};
 
   use std::{
@@ -321,26 +321,36 @@ pub mod zip {
 
       let EntrySpecificationList(entries) = EntrySpecificationList::from_file_specs(input_files);
 
-      let (unprocessed_tx, unprocessed_rx) = mpsc::channel::<ZipEntrySpecification>(2000);
-      let unprocessed_entries = ReceiverStream::new(unprocessed_rx);
+      let (unprocessed_tx, unprocessed_rx) = mpsc::unbounded_channel::<ZipEntrySpecification>();
+      let unprocessed_entries = UnboundedReceiverStream::new(unprocessed_rx);
       /* Send these into the channel and block until they're done, but don't wait for it to join. */
       let initial_send = task::spawn(async move {
         for entry in entries.into_iter() {
-          unprocessed_tx.send(entry).await?;
+          unprocessed_tx.send(entry)?;
         }
         Ok::<(), MedusaZipError>(())
       });
 
-      let (compressed_tx, compressed_rx) = mpsc::channel::<IntermediateSingleEntry>(40000);
-      let compressed_entries = ReceiverStream::new(compressed_rx);
+      let (compressed_tx, compressed_rx) = mpsc::unbounded_channel::<IntermediateSingleEntry>();
+      let compressed_entries = UnboundedReceiverStream::new(compressed_rx);
       /* Compress individual entries. */
       let compress_send = task::spawn(async move {
-        let process_stream = unprocessed_entries.then(|unprocessed_entry| async move {
-          IntermediateSingleEntry::zip_single(unprocessed_entry, zip_options).await
-        });
+        let process_stream =
+          unprocessed_entries
+            .ready_chunks(2000)
+            .then(|unprocessed_entries| async move {
+              try_join_all(
+                unprocessed_entries
+                  .into_iter()
+                  .map(|entry| IntermediateSingleEntry::zip_single(entry, zip_options)),
+              )
+              .await
+            });
         pin_mut!(process_stream);
-        while let Some(compressed_entry) = process_stream.next().await {
-          compressed_tx.send(compressed_entry?).await?;
+        while let Some(compressed_entries) = process_stream.next().await {
+          for entry in compressed_entries?.into_iter() {
+            compressed_tx.send(entry)?;
+          }
         }
         Ok::<(), MedusaZipError>(())
       });
@@ -351,21 +361,24 @@ pub mod zip {
          * a mutex, but the overhead is pretty low anyway so it probably doesn't matter. */
         let output_zip = Arc::new(Mutex::new(ZipWriter::new(output)));
 
+        let compressed_entries = compressed_entries.ready_chunks(4000);
         pin_mut!(compressed_entries);
-        while let Some(compressed_entry) = compressed_entries.next().await {
+        while let Some(compressed_entries) = compressed_entries.next().await {
           let output_zip = output_zip.clone();
           task::spawn_blocking(move || {
-            match compressed_entry {
-              IntermediateSingleEntry::Directory(EntryName(name)) => {
-                output_zip.lock().add_directory(&name, zip_options)?;
-              },
-              IntermediateSingleEntry::File(EntryName(name), single_member_archive) => {
-                let mut single_member_archive =
-                  ZipArchive::new(Cursor::new(single_member_archive))?;
-                /* TODO: can we use .by_index_raw(0) instead? */
-                let member = single_member_archive.by_name(&name)?;
-                output_zip.lock().raw_copy_file(member)?;
-              },
+            for entry in compressed_entries.into_iter() {
+              match entry {
+                IntermediateSingleEntry::Directory(EntryName(name)) => {
+                  output_zip.lock().add_directory(&name, zip_options)?;
+                },
+                IntermediateSingleEntry::File(EntryName(name), single_member_archive) => {
+                  let mut single_member_archive =
+                    ZipArchive::new(Cursor::new(single_member_archive))?;
+                  /* TODO: can we use .by_index_raw(0) instead? */
+                  let member = single_member_archive.by_name(&name)?;
+                  output_zip.lock().raw_copy_file(member)?;
+                },
+              }
             }
             Ok::<(), ZipError>(())
           })
