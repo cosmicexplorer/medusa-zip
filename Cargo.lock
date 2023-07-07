@@ -634,7 +634,6 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
- "zip",
 ]
 
 [[package]]
@@ -1223,7 +1222,6 @@ checksum = "1a515f5799fe4961cb532f983ce2b23082366b898e52ffbce459c86f67c8378a"
 [[package]]
 name = "zip"
 version = "0.6.6"
-source = "git+https://github.com/cosmicexplorer/zip?rev=21a20584bc9e05dfa4f3c5b0bc420a1389fae2c3#21a20584bc9e05dfa4f3c5b0bc420a1389fae2c3"
 dependencies = [
  "aes",
  "byteorder",

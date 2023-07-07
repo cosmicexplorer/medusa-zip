@@ -54,9 +54,16 @@ mod cli {
   mod args {
     use libmedusa_zip::MedusaZipOptions;
 
-    use clap::{Parser, Subcommand};
+    use clap::{Args, Parser, Subcommand};
 
     use std::path::PathBuf;
+
+    #[derive(Args, Debug)]
+    pub struct Output {
+      /// File path to write a zip to.
+      #[arg(short, long, default_value = None)]
+      pub output: Option<PathBuf>,
+    }
 
     #[derive(Subcommand, Debug)]
     pub enum Command {
@@ -66,10 +73,15 @@ mod cli {
       /// Consume a JSON object from [`Self::Crawl`] over stdin and write those
       /// files into a zip file at `output`.
       Zip {
-        /// File path to write a zip to.
-        output: PathBuf,
+        #[command(flatten)]
+        output: Output,
         #[command(flatten)]
         options: MedusaZipOptions,
+      },
+      /// Merge the content of several zip files into one.
+      Merge {
+        #[command(flatten)]
+        output: Output,
       },
     }
 
@@ -82,10 +94,10 @@ mod cli {
       pub command: Command,
     }
   }
-  pub use args::{Cli, Command};
+  pub use args::{Cli, Command, Output};
 
   mod run {
-    use super::{Cli, Command};
+    use super::{Cli, Command, Output};
 
     use libmedusa_zip::{
       CrawlResult, MedusaCrawl, MedusaCrawlError, MedusaNameFormatError, MedusaZipError,
@@ -97,9 +109,91 @@ mod cli {
     use serde_json;
 
     use std::{
-      fs::OpenOptions,
-      io::{self, Read},
+      fs::{self, OpenOptions},
+      io::{self, Cursor, Read, Seek, Write},
     };
+
+    pub enum OutputStream {
+      File(fs::File),
+      Stdout(Cursor<Vec<u8>>),
+    }
+
+    impl OutputStream {
+      pub fn from_args(o: Output) -> Result<Self, io::Error> {
+        let Output { output } = o;
+        match output {
+          None => Ok(Self::Stdout(Cursor::new(Vec::new()))),
+          Some(path) => Ok(Self::File(
+            OpenOptions::new()
+              .write(true)
+              .create(true)
+              .append(true)
+              .open(&path)?,
+          )),
+        }
+      }
+    }
+
+    impl io::Read for OutputStream {
+      fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+          Self::File(f) => f.read(buf),
+          Self::Stdout(c) => c.read(buf),
+        }
+      }
+
+      fn read_vectored(&mut self, bufs: &mut [io::IoSliceMut<'_>]) -> io::Result<usize> {
+        match self {
+          Self::File(f) => f.read_vectored(bufs),
+          Self::Stdout(c) => c.read_vectored(bufs),
+        }
+      }
+    }
+
+    impl io::Write for OutputStream {
+      fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+          Self::File(f) => f.write(buf),
+          Self::Stdout(c) => c.write(buf),
+        }
+      }
+
+      fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
+        match self {
+          Self::File(f) => f.write_vectored(bufs),
+          Self::Stdout(c) => c.write_vectored(bufs),
+        }
+      }
+
+      fn flush(&mut self) -> io::Result<()> {
+        match self {
+          Self::File(f) => f.flush(),
+          Self::Stdout(c) => c.flush(),
+        }
+      }
+    }
+
+    impl io::Seek for OutputStream {
+      fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        match self {
+          Self::File(f) => f.seek(pos),
+          Self::Stdout(c) => c.seek(pos),
+        }
+      }
+    }
+
+    impl Drop for OutputStream {
+      fn drop(&mut self) {
+        match self {
+          Self::Stdout(c) => {
+            c.rewind().expect("error rewinding during drop");
+            let mut stdout = io::stdout().lock();
+            io::copy(c, &mut stdout).expect("error copying to stdout during drop");
+          },
+          _ => (),
+        }
+      }
+    }
 
     #[derive(Debug, Display, Error)]
     pub enum MedusaCliError {
@@ -107,7 +201,7 @@ mod cli {
       MedusaZip(#[from] MedusaZipError),
       /// error performing parallel crawl: {0}
       MedusaCrawl(#[from] MedusaCrawlError),
-      /// error in zip name format: {0}
+      /// error in zip entry name: {0}
       MedusaNameFormat(#[from] MedusaNameFormatError),
       /// error performing top-level i/o: {0}
       Io(#[from] io::Error),
@@ -131,22 +225,20 @@ mod cli {
             println!("{}", crawl_json);
           },
           Command::Zip { output, options } => {
+            /* Initialize output file. */
+            let output_file = OutputStream::from_args(output)?;
+
             /* Read json serialization from stdin. */
             let mut input_json: Vec<u8> = Vec::new();
             io::stdin().lock().read_to_end(&mut input_json)?;
             let crawl_result: CrawlResult = serde_json::from_slice(&input_json)?;
+
             /* Apply options from command line to produce a zip spec. */
             let crawled_zip = crawl_result.medusa_zip(options)?;
 
-            let output_file = OpenOptions::new()
-              .write(true)
-              .create(true)
-              .truncate(true)
-              .open(&output)?;
             crawled_zip.zip(output_file).await?;
-
-            eprintln!("wrote to: {}", output.display());
           },
+          Command::Merge { output } => {},
         }
 
         Ok(())
