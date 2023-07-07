@@ -50,6 +50,7 @@ use displaydoc::Display;
 use thiserror::Error;
 
 use std::cmp;
+use std::fmt;
 use std::path::PathBuf;
 
 /// Allowed zip format quirks that we refuse to handle right now.
@@ -67,6 +68,13 @@ pub enum MedusaNameFormatError {
 
 #[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct EntryName(pub String);
+
+impl fmt::Display for EntryName {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let Self(name) = self;
+    write!(f, "'{}'", name)
+  }
+}
 
 impl EntryName {
   pub fn validate(name: String) -> Result<Self, MedusaNameFormatError> {
@@ -149,6 +157,12 @@ pub mod zip {
     SourceNotFound(PathBuf, #[source] io::Error),
   }
 
+  #[derive(Debug, Display, Error)]
+  pub enum InputConsistencyError {
+    /// name {0} was duplicated for source paths {1:?} and {2:?}
+    DuplicateName(EntryName, PathBuf, PathBuf),
+  }
+
   /// All types of errors from the parallel zip process.
   #[derive(Debug, Display, Error)]
   pub enum MedusaZipError {
@@ -158,6 +172,8 @@ pub mod zip {
     Zip(#[from] ZipError),
     /// join error: {0}
     Join(#[from] task::JoinError),
+    /// error reconciling input sources: {0}
+    InputConsistency(#[from] InputConsistencyError),
     /// error reading input file: {0}
     InputRead(#[from] MedusaInputReadError),
     /// error sending initial input: {0:?}
@@ -204,12 +220,27 @@ pub mod zip {
   struct EntrySpecificationList(pub Vec<ZipEntrySpecification>);
 
   impl EntrySpecificationList {
-    pub fn from_file_specs(mut specs: Vec<FileSource>) -> Self {
+    pub fn from_file_specs(mut specs: Vec<FileSource>) -> Result<Self, InputConsistencyError> {
       /* Sort the resulting files so we can expect them to (mostly) be an inorder
        * directory traversal. Directories with names less than top-level
        * files will be sorted above those top-level files, which matches pex's Chroot behavior. */
       specs.sort_unstable();
-      /* TODO: check for duplicate names? */
+      /* Check for duplicate names. */
+      {
+        let mut prev_name = EntryName("".to_string());
+        let mut prev_path = PathBuf::from("");
+        for FileSource { source, name } in specs.iter() {
+          if name == &prev_name {
+            return Err(InputConsistencyError::DuplicateName(
+              name.clone(),
+              prev_path,
+              source.clone(),
+            ));
+          }
+          prev_name = name.clone();
+          prev_path = source.clone();
+        }
+      }
 
       let mut ret: Vec<ZipEntrySpecification> = Vec::new();
       let mut previous_directory_components: Vec<String> = Vec::new();
@@ -253,7 +284,7 @@ pub mod zip {
         ret.push(ZipEntrySpecification::File(FileSource { source, name }));
       }
 
-      Self(ret)
+      Ok(Self(ret))
     }
   }
 
@@ -319,7 +350,7 @@ pub mod zip {
       let MedusaZipOptions { reproducibility } = options;
       let zip_options = reproducibility.zip_options();
 
-      let EntrySpecificationList(entries) = EntrySpecificationList::from_file_specs(input_files);
+      let EntrySpecificationList(entries) = EntrySpecificationList::from_file_specs(input_files)?;
 
       let (unprocessed_tx, unprocessed_rx) = mpsc::unbounded_channel::<ZipEntrySpecification>();
       let unprocessed_entries = UnboundedReceiverStream::new(unprocessed_rx);
