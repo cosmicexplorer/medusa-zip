@@ -203,6 +203,7 @@ pub mod zip {
   use displaydoc::Display;
   use futures::{future::try_join_all, pin_mut, stream::StreamExt, try_join};
   use parking_lot::Mutex;
+  use rayon::prelude::*;
   use thiserror::Error;
   use tokio::{
     fs,
@@ -293,7 +294,7 @@ pub mod zip {
       /* Sort the resulting files so we can expect them to (mostly) be an inorder
        * directory traversal. Directories with names less than top-level
        * files will be sorted above those top-level files, which matches pex's Chroot behavior. */
-      specs.sort_unstable();
+      specs.par_sort_unstable();
       /* Check for duplicate names. */
       {
         let mut prev_name = EntryName("".to_string());
@@ -419,7 +420,9 @@ pub mod zip {
       let MedusaZipOptions { reproducibility } = options;
       let zip_options = reproducibility.zip_options();
 
-      let EntrySpecificationList(entries) = EntrySpecificationList::from_file_specs(input_files)?;
+      let EntrySpecificationList(entries) =
+        task::spawn_blocking(move || EntrySpecificationList::from_file_specs(input_files))
+        .await??;
 
       let (unprocessed_tx, unprocessed_rx) = mpsc::unbounded_channel::<ZipEntrySpecification>();
       let unprocessed_entries = UnboundedReceiverStream::new(unprocessed_rx);
