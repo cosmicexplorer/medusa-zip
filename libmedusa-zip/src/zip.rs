@@ -13,12 +13,15 @@ use crate::{EntryName, FileSource};
 
 use clap::{Args, ValueEnum};
 use displaydoc::Display;
-use futures::future::try_join_all;
+use futures::{
+  future::try_join_all,
+  stream::{FuturesOrdered, StreamExt},
+};
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use tempfile::tempfile;
 use thiserror::Error;
-use tokio::{fs, io, task};
+use tokio::{fs, io, task, sync::mpsc};
 use zip::{self, result::ZipError, ZipArchive, ZipWriter};
 
 use std::{
@@ -165,7 +168,6 @@ pub enum MedusaInputReadError {
   Join(#[from] task::JoinError),
 }
 
-/* TODO: read file into mem or keep it as a handle! */
 enum IntermediateSingleEntry {
   Directory(EntryName),
   File(EntryName, std::fs::File),
@@ -242,19 +244,17 @@ impl MedusaZip {
     .await??;
 
     /* (2) Map to individual file handles and/or in-memory "immediate" zip files. */
-    let single_entries = try_join_all(
-      entries
-        .iter()
-        .cloned()
-        .map(|entry| IntermediateSingleEntry::open_handle(entry, zip_options)),
-    )
-    .await?;
+    let mut single_entries = entries
+      .iter()
+      .cloned()
+      .map(|entry| IntermediateSingleEntry::open_handle(entry, zip_options))
+      .collect::<FuturesOrdered<_>>();
 
     /* (3) Add file entries, in order. */
     let intermediate_output = Arc::new(Mutex::new(intermediate_output));
-    for intermediate_entry in single_entries.into_iter() {
+    while let Some(intermediate_entry) = single_entries.next().await {
       let intermediate_output = intermediate_output.clone();
-      match intermediate_entry {
+      match intermediate_entry? {
         IntermediateSingleEntry::Directory(name) => {
           task::spawn_blocking(move || {
             let mut intermediate_output = intermediate_output.lock();
