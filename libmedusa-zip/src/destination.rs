@@ -10,9 +10,22 @@
 //! ???
 
 use clap::ValueEnum;
+use displaydoc::Display;
+use thiserror::Error;
+use tokio::{fs, io, task};
 use zip::{result::ZipError, ZipWriter};
 
-use std::{fs, io, path::Path};
+use std::path::Path;
+
+#[derive(Debug, Display, Error)]
+pub enum DestinationError {
+  /// i/o error accessing destination file: {0}
+  Io(#[from] io::Error),
+  /// error setting up zip format in destination file: {0}
+  Zip(#[from] ZipError),
+  /// error joining zip setup task: {0}
+  Join(#[from] task::JoinError),
+}
 
 #[derive(Copy, Clone, Default, Debug, ValueEnum)]
 pub enum DestinationBehavior {
@@ -26,14 +39,15 @@ pub enum DestinationBehavior {
 }
 
 impl DestinationBehavior {
-  pub fn initialize(self, path: &Path) -> Result<ZipWriter<fs::File>, ZipError> {
+  pub async fn initialize(self, path: &Path) -> Result<ZipWriter<std::fs::File>, DestinationError> {
     let (file, with_append) = match self {
       Self::AlwaysTruncate => {
         let f = fs::OpenOptions::new()
           .write(true)
           .create(true)
           .truncate(true)
-          .open(path)?;
+          .open(path)
+          .await?;
         (f, false)
       },
       Self::AppendOrFail => {
@@ -41,15 +55,17 @@ impl DestinationBehavior {
           .write(true)
           .append(true)
           .read(true)
-          .open(path)?;
+          .open(path)
+          .await?;
         (f, true)
       },
       Self::OptimisticallyAppend => {
-        let exclusive_attempt = fs::OpenOptions::new()
+        match fs::OpenOptions::new()
           .write(true)
           .create_new(true)
-          .open(path);
-        match exclusive_attempt {
+          .open(path)
+          .await
+        {
           Ok(f) => (f, false),
           Err(e) => match e.kind() {
             io::ErrorKind::AlreadyExists => {
@@ -57,7 +73,8 @@ impl DestinationBehavior {
                 .write(true)
                 .append(true)
                 .read(true)
-                .open(path)?;
+                .open(path)
+                .await?;
               (f, true)
             },
             _ => {
@@ -67,10 +84,17 @@ impl DestinationBehavior {
         }
       },
     };
-    if with_append {
-      ZipWriter::new_append(file)
-    } else {
-      Ok(ZipWriter::new(file))
-    }
+    let file = file.into_std().await;
+
+    let writer = task::spawn_blocking(move || {
+      if with_append {
+        Ok::<_, DestinationError>(ZipWriter::new_append(file)?)
+      } else {
+        Ok(ZipWriter::new(file))
+      }
+    })
+    .await??;
+
+    Ok(writer)
   }
 }

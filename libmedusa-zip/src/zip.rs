@@ -194,6 +194,8 @@ pub struct MedusaZip {
   pub options: MedusaZipOptions,
 }
 
+/* FIXME: make the later zips have more files than the earlier ones, so they can take longer to
+ * complete (need to fully pipeline to make this useful)! */
 const ENTRIES_PER_INTERMEDIATE: usize = 1_000;
 
 impl MedusaZip {

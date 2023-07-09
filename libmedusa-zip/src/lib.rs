@@ -133,7 +133,7 @@ impl cmp::Ord for FileSource {
 }
 
 mod destination;
-pub use destination::DestinationBehavior;
+pub use destination::{DestinationBehavior, DestinationError};
 
 mod zip;
 pub use crate::zip::{MedusaZip, MedusaZipError, MedusaZipOptions, Reproducibility};

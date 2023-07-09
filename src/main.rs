@@ -74,8 +74,7 @@ mod cli {
       /// the top-level `paths`.
       Crawl {
         /// ???
-        paths: Vec<PathBuf>
-        /* TODO: ignores */
+        paths: Vec<PathBuf>, /* TODO: ignores */
       },
       /// Consume a JSON object from [`Self::Crawl`] over stdin and write those
       /// files into a zip file at `output`.
@@ -109,12 +108,13 @@ mod cli {
     use super::{Cli, Command, Output};
 
     use libmedusa_zip::{
-      CrawlResult, MedusaCrawl, MedusaCrawlError, MedusaNameFormatError, MedusaZipError,
+      CrawlResult, DestinationError, MedusaCrawl, MedusaCrawlError, MedusaNameFormatError,
+      MedusaZipError,
     };
 
     use displaydoc::Display;
     use thiserror::Error;
-    use zip::{result::ZipError, read::ZipArchive, write::ZipWriter};
+    use zip::{read::ZipArchive, result::ZipError, write::ZipWriter};
 
     use serde_json;
 
@@ -124,9 +124,9 @@ mod cli {
     };
 
     impl Output {
-      pub fn initialize(self) -> Result<ZipWriter<fs::File>, ZipError> {
+      pub async fn initialize(self) -> Result<ZipWriter<std::fs::File>, DestinationError> {
         let Self { output, behavior } = self;
-        behavior.initialize(&output)
+        behavior.initialize(&output).await
       }
     }
 
@@ -143,6 +143,8 @@ mod cli {
       /// error de/serializing json: {0}
       Json(#[from] serde_json::Error),
       /// error creating output zip file: {0}
+      Destination(#[from] DestinationError),
+      /// error writing to output zip: {0}
       OutputZip(#[from] ZipError),
     }
 
@@ -163,7 +165,7 @@ mod cli {
           },
           Command::Zip { output, options } => {
             /* Initialize output stream. */
-            let output_zip = output.initialize()?;
+            let output_zip = output.initialize().await?;
 
             /* Read json serialization from stdin. */
             let mut input_json: Vec<u8> = Vec::new();
@@ -174,11 +176,12 @@ mod cli {
             let crawled_zip = crawl_result.medusa_zip(options)?;
 
             /* Do the parallel zip!!! */
-            crawled_zip.zip(output_zip).await?;
+            /* TODO: log the file output! */
+            let _output_file_handle = crawled_zip.zip(output_zip).await?;
           },
           Command::Merge { output, sources } => {
             /* Initialize output stream. */
-            let mut output_zip = output.initialize()?;
+            let mut output_zip = output.initialize().await?;
 
             /* Copy over constituent zips into current. */
             for source_zip_path in sources.into_iter() {
@@ -187,7 +190,7 @@ mod cli {
               output_zip.merge_archive(source_zip)?;
             }
 
-            output_zip.finish()?;
+            let _output_file_handle = output_zip.finish()?;
           },
         }
 
