@@ -13,7 +13,7 @@ libmedusa-zip           = { path = "./libmedusa-zip" }
 serde_json              = "1.0"
 thiserror               = "1.0.30"
 tokio                   = { version = "1.29", features = ["macros", "rt", "rt-multi-thread"] }
-zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "60354fa3969a36a1f1d3bc31e646567ca43d189f" }
+zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "6e21499038ed5af0d0676c6a706d332714617dbf" }
 # zip                     = { path = "/home/cosmicexplorer/tools/zip" }
 
 [workspace]

@@ -67,7 +67,7 @@ pub enum MedusaNameFormatError {
 }
 
 #[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
-pub struct EntryName(pub String);
+pub struct EntryName(String);
 
 impl fmt::Display for EntryName {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -77,6 +77,11 @@ impl fmt::Display for EntryName {
 }
 
 impl EntryName {
+  pub fn into_string(self) -> String {
+    let Self(name) = self;
+    name
+  }
+
   pub fn validate(name: String) -> Result<Self, MedusaNameFormatError> {
     if name.is_empty() {
       Err(MedusaNameFormatError::NameIsEmpty)
@@ -201,22 +206,20 @@ pub mod zip {
 
   use clap::{Args, ValueEnum};
   use displaydoc::Display;
-  use futures::{future::try_join_all, pin_mut, stream::StreamExt, try_join};
+  use futures::{
+    pin_mut,
+    stream::{self, StreamExt},
+  };
   use parking_lot::Mutex;
   use rayon::prelude::*;
+  use tempfile::tempfile;
   use thiserror::Error;
-  use tokio::{
-    fs,
-    io::{self, AsyncReadExt},
-    sync::mpsc,
-    task,
-  };
-  use tokio_stream::wrappers::UnboundedReceiverStream;
+  use tokio::{fs, io, task};
   use zip::{self, result::ZipError, ZipArchive, ZipWriter};
 
   use std::{
     cmp,
-    io::{Cursor, Seek, Write},
+    io::{Seek, Write},
     path::PathBuf,
     sync::Arc,
   };
@@ -246,10 +249,6 @@ pub mod zip {
     InputConsistency(#[from] InputConsistencyError),
     /// error reading input file: {0}
     InputRead(#[from] MedusaInputReadError),
-    /// error sending initial input: {0:?}
-    InitialSend(#[from] mpsc::error::SendError<ZipEntrySpecification>),
-    /// error sending intermediate input: {0:?}
-    IntermediateSend(#[from] mpsc::error::SendError<IntermediateSingleEntry>),
   }
 
   #[derive(Copy, Clone, Default, Debug, ValueEnum)]
@@ -282,7 +281,8 @@ pub mod zip {
     pub reproducibility: Reproducibility,
   }
 
-  pub enum ZipEntrySpecification {
+  #[derive(Clone, Debug)]
+  enum ZipEntrySpecification {
     File(FileSource),
     Directory(EntryName),
   }
@@ -358,46 +358,24 @@ pub mod zip {
     }
   }
 
-  pub enum IntermediateSingleEntry {
-    File(EntryName, Vec<u8>),
+  /* enum  */
+
+  enum IntermediateSingleEntry {
+    File(EntryName, std::fs::File),
     Directory(EntryName),
   }
 
   impl IntermediateSingleEntry {
-    pub async fn zip_single(
-      entry: ZipEntrySpecification,
-      zip_options: zip::write::FileOptions,
-    ) -> Result<Self, MedusaZipError> {
+    pub async fn open_handle(entry: ZipEntrySpecification) -> Result<Self, MedusaInputReadError> {
       match entry {
         ZipEntrySpecification::Directory(name) => Ok(Self::Directory(name)),
         ZipEntrySpecification::File(FileSource { name, source }) => {
-          let mut input_file_contents = Vec::new();
-          fs::OpenOptions::new()
+          let handle = fs::OpenOptions::new()
             .read(true)
             .open(&source)
             .await
-            .map_err(|e| MedusaInputReadError::SourceNotFound(source, e))?
-            .read_to_end(&mut input_file_contents)
-            .await?;
-
-          let output_name = name.clone();
-          /* TODO: consider async-zip crate at https://docs.rs/async_zip/latest/async_zip/ as well! */
-          let output_zip = task::spawn_blocking(move || {
-            let mut output = Cursor::new(Vec::new());
-            {
-              let mut out_zip = ZipWriter::new(&mut output);
-
-              let EntryName(name) = output_name;
-              out_zip.start_file(&name, zip_options)?;
-              out_zip.write_all(&input_file_contents)?;
-
-              out_zip.finish()?;
-            }
-            Ok::<Vec<u8>, MedusaZipError>(output.into_inner())
-          })
-          .await??;
-
-          Ok(Self::File(name, output_zip))
+            .map_err(|e| MedusaInputReadError::SourceNotFound(source, e))?;
+          Ok(Self::File(name, handle.into_std().await))
         },
       }
     }
@@ -408,8 +386,10 @@ pub mod zip {
     pub options: MedusaZipOptions,
   }
 
+  const ENTRIES_PER_INTERMEDIATE: usize = 100;
+
   impl MedusaZip {
-    pub async fn zip<Output>(self, output: ZipWriter<Output>) -> Result<(), MedusaZipError>
+    pub async fn zip<Output>(self, output_zip: ZipWriter<Output>) -> Result<Output, MedusaZipError>
     where
       Output: Write + Seek + Send + 'static,
     {
@@ -422,91 +402,82 @@ pub mod zip {
 
       let EntrySpecificationList(entries) =
         task::spawn_blocking(move || EntrySpecificationList::from_file_specs(input_files))
-        .await??;
+          .await??;
 
-      let (unprocessed_tx, unprocessed_rx) = mpsc::unbounded_channel::<ZipEntrySpecification>();
-      let unprocessed_entries = UnboundedReceiverStream::new(unprocessed_rx);
-      /* Send these into the channel and block until they're done, but don't wait for it to join. */
-      let initial_send = task::spawn(async move {
-        for entry in entries.into_iter() {
-          unprocessed_tx.send(entry)?;
-        }
-        Ok::<(), MedusaZipError>(())
-      });
+      /* (1) Split into however many subtasks (which may just be one) to do "normally". */
+      /* TODO: fully recursive? or just one level of recursion? */
+      let ordered_intermediates =
+        stream::iter(entries.chunks(ENTRIES_PER_INTERMEDIATE)).then(|entries| async {
+          /* (2) Create unnamed filesystem-backed temp file handle. */
+          let intermediate_output = Arc::new(Mutex::new(
+            task::spawn_blocking(|| {
+              let temp_file = tempfile()?;
+              let zip_wrapper = ZipWriter::new(temp_file);
+              Ok::<_, MedusaZipError>(zip_wrapper)
+            })
+            .await??,
+          ));
 
-      let (compressed_tx, compressed_rx) = mpsc::unbounded_channel::<IntermediateSingleEntry>();
-      let compressed_entries = UnboundedReceiverStream::new(compressed_rx);
-      /* Compress individual entries. */
-      let compress_send = task::spawn(async move {
-        let process_stream =
-          unprocessed_entries
-            .ready_chunks(20000)
-            .then(|unprocessed_entries| async move {
-              try_join_all(
-                unprocessed_entries
-                  .into_iter()
-                  .map(|entry| IntermediateSingleEntry::zip_single(entry, zip_options)),
-              )
-              .await
-            });
-        pin_mut!(process_stream);
-        while let Some(compressed_entries) = process_stream.next().await {
-          for entry in compressed_entries?.into_iter() {
-            compressed_tx.send(entry)?;
-          }
-        }
-        Ok::<(), MedusaZipError>(())
-      });
+          /* (3) Map to individual *file handles*; no reads yet. */
+          let handle_stream = stream::iter(entries.to_vec())
+            .then(|entry| IntermediateSingleEntry::open_handle(entry));
+          pin_mut!(handle_stream);
 
-      /* Write output zip by reconstituting individual entries. */
-      let zip_write = task::spawn(async move {
-        /* TODO: this all runs sequentially in the same thread, so it shouldn't need to wrap it in
-         * a mutex, but the overhead is pretty low anyway so it probably doesn't matter. */
-        let output_zip = Arc::new(Mutex::new(output));
-
-        let compressed_entries = compressed_entries.ready_chunks(100000);
-        pin_mut!(compressed_entries);
-        while let Some(compressed_entries) = compressed_entries.next().await {
-          let output_zip = output_zip.clone();
-          task::spawn_blocking(move || {
-            for entry in compressed_entries.into_iter() {
-              match entry {
-                IntermediateSingleEntry::Directory(EntryName(name)) => {
-                  output_zip.lock().add_directory(&name, zip_options)?;
-                },
-                IntermediateSingleEntry::File(EntryName(name), single_member_archive) => {
-                  let mut single_member_archive =
-                    ZipArchive::new(Cursor::new(single_member_archive))?;
-                  /* TODO: can we use .by_index_raw(0) instead? */
-                  let member = single_member_archive.by_name(&name)?;
-                  output_zip.lock().raw_copy_file(member)?;
-                },
-              }
+          while let Some(handle) = handle_stream.next().await {
+            let intermediate_output = intermediate_output.clone();
+            match handle? {
+              IntermediateSingleEntry::Directory(name) => {
+                task::spawn_blocking(move || {
+                  let mut intermediate_output = intermediate_output.lock();
+                  intermediate_output.add_directory(name.into_string(), zip_options)?;
+                  Ok::<(), MedusaZipError>(())
+                })
+                .await??;
+              },
+              IntermediateSingleEntry::File(name, mut handle) => {
+                task::spawn_blocking(move || {
+                  let mut intermediate_output = intermediate_output.lock();
+                  intermediate_output.start_file(name.into_string(), zip_options)?;
+                  std::io::copy(&mut handle, &mut *intermediate_output)?;
+                  Ok::<(), MedusaZipError>(())
+                })
+                .await??;
+              },
             }
-            Ok::<(), ZipError>(())
+          }
+
+          let temp_for_read = task::spawn_blocking(move || {
+            let mut zip_wrapper = Arc::into_inner(intermediate_output)
+              .expect("no other references should exist to intermediate_output")
+              .into_inner();
+            let temp_file = zip_wrapper.finish()?;
+            ZipArchive::new(temp_file)
           })
           .await??;
-        }
+          Ok::<_, MedusaZipError>(temp_for_read)
+        });
+      pin_mut!(ordered_intermediates);
 
+      let output_zip = Arc::new(Mutex::new(output_zip));
+      while let Some(intermediate_zip) = ordered_intermediates.next().await {
+        let intermediate_zip = intermediate_zip?;
+        let output_zip = output_zip.clone();
         task::spawn_blocking(move || {
-          output_zip.lock().finish()?;
-          Ok::<(), ZipError>(())
+          output_zip.lock().merge_archive(intermediate_zip)?;
+          Ok::<(), MedusaZipError>(())
         })
         .await??;
-
-        Ok::<(), MedusaZipError>(())
-      });
-
-      /* All of these futures are contained within a task::spawn and therefore a JoinHandle, and
-       * require an additional unwrapping. */
-      {
-        let (initial_send, compress_send, zip_write) =
-          try_join!(initial_send, compress_send, zip_write)?;
-        initial_send?;
-        compress_send?;
-        zip_write?;
       }
-      Ok(())
+      let output_handle = task::spawn_blocking(move || {
+        let mut output_zip = Arc::into_inner(output_zip)
+          .expect("no other references should exist to output_zip")
+          .into_inner();
+        let output_handle = output_zip.finish()?;
+        Ok::<Output, MedusaZipError>(output_handle)
+      })
+      .await??;
+
+      Ok(output_handle)
     }
   }
 }
