@@ -13,11 +13,7 @@ use crate::{EntryName, FileSource};
 
 use clap::{Args, ValueEnum};
 use displaydoc::Display;
-use futures::{
-  future::try_join_all,
-  pin_mut,
-  stream::{self, StreamExt},
-};
+use futures::future::try_join_all;
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use tempfile::tempfile;
@@ -31,18 +27,6 @@ use std::{
   path::PathBuf,
   sync::Arc,
 };
-
-#[derive(Debug, Display, Error)]
-pub enum MedusaInputReadError {
-  /// Source file {0:?} from crawl could not be accessed: {1}.
-  SourceNotFound(PathBuf, #[source] io::Error),
-}
-
-#[derive(Debug, Display, Error)]
-pub enum InputConsistencyError {
-  /// name {0} was duplicated for source paths {1:?} and {2:?}
-  DuplicateName(EntryName, PathBuf, PathBuf),
-}
 
 /// All types of errors from the parallel zip process.
 #[derive(Debug, Display, Error)]
@@ -87,6 +71,12 @@ pub struct MedusaZipOptions {
   /// Reproducibility behavior when generating zip archives.
   #[arg(value_enum, default_value_t, short, long)]
   pub reproducibility: Reproducibility,
+}
+
+#[derive(Debug, Display, Error)]
+pub enum InputConsistencyError {
+  /// name {0} was duplicated for source paths {1:?} and {2:?}
+  DuplicateName(EntryName, PathBuf, PathBuf),
 }
 
 #[derive(Clone, Debug)]
@@ -165,16 +155,30 @@ impl EntrySpecificationList {
   }
 }
 
-/* TODO: read file into mem or keep it as a handle! */
-/* enum  */
-
-enum IntermediateSingleEntry {
-  File(EntryName, std::fs::File),
-  Directory(EntryName),
+#[derive(Debug, Display, Error)]
+pub enum MedusaInputReadError {
+  /// Source file {0:?} from crawl could not be accessed: {1}.
+  SourceNotFound(PathBuf, #[source] io::Error),
+  /// error creating in-memory immediate file: {0}
+  Zip(#[from] ZipError),
+  /// error joining: {0}
+  Join(#[from] task::JoinError),
 }
 
+/* TODO: read file into mem or keep it as a handle! */
+enum IntermediateSingleEntry {
+  Directory(EntryName),
+  File(EntryName, std::fs::File),
+  ImmediateFile(ZipArchive<std::io::Cursor<Vec<u8>>>),
+}
+
+const SMALL_FILE_MAX_SIZE: usize = 1_000;
+
 impl IntermediateSingleEntry {
-  pub async fn open_handle(entry: ZipEntrySpecification) -> Result<Self, MedusaInputReadError> {
+  pub async fn open_handle(
+    entry: ZipEntrySpecification,
+    zip_options: zip::write::FileOptions,
+  ) -> Result<Self, MedusaInputReadError> {
     match entry {
       ZipEntrySpecification::Directory(name) => Ok(Self::Directory(name)),
       ZipEntrySpecification::File(FileSource { name, source }) => {
@@ -182,8 +186,34 @@ impl IntermediateSingleEntry {
           .read(true)
           .open(&source)
           .await
-          .map_err(|e| MedusaInputReadError::SourceNotFound(source, e))?;
-        Ok(Self::File(name, handle.into_std().await))
+          .map_err(|e| MedusaInputReadError::SourceNotFound(source.clone(), e))?;
+        let reported_len: usize = handle
+          .metadata()
+          .await
+          .map_err(|e| MedusaInputReadError::SourceNotFound(source, e))?
+          .len() as usize;
+
+        let mut handle = handle.into_std().await;
+        /* If the file is large, we avoid trying to read it yet. */
+        if reported_len > SMALL_FILE_MAX_SIZE {
+          Ok(Self::File(name, handle))
+        } else {
+          /* Otherwise, we enter the file into a single-entry zip. */
+          let buf = std::io::Cursor::new(Vec::new());
+          let mut mem_zip = ZipWriter::new(buf);
+
+          /* FIXME: quit out of buffering if the file is actually larger than reported!!! */
+          let mem_zip = task::spawn_blocking(move || {
+            mem_zip.start_file(name.into_string(), zip_options)?;
+            std::io::copy(&mut handle, &mut mem_zip)?;
+            let buf = mem_zip.finish()?;
+            let mem_zip = ZipArchive::new(buf)?;
+            Ok::<_, ZipError>(mem_zip)
+          })
+          .await??;
+
+          Ok(Self::ImmediateFile(mem_zip))
+        }
       },
     }
   }
@@ -203,30 +233,33 @@ impl MedusaZip {
     entries: &[ZipEntrySpecification],
     zip_options: zip::write::FileOptions,
   ) -> Result<ZipArchive<std::fs::File>, MedusaZipError> {
-    /* (2) Create unnamed filesystem-backed temp file handle. */
-    let intermediate_output = Arc::new(Mutex::new(
-      task::spawn_blocking(|| {
-        let temp_file = tempfile()?;
-        let zip_wrapper = ZipWriter::new(temp_file);
-        Ok::<_, MedusaZipError>(zip_wrapper)
-      })
-      .await??,
-    ));
+    /* (1) Create unnamed filesystem-backed temp file handle. */
+    let intermediate_output = task::spawn_blocking(|| {
+      let temp_file = tempfile()?;
+      let zip_wrapper = ZipWriter::new(temp_file);
+      Ok::<_, MedusaZipError>(zip_wrapper)
+    })
+    .await??;
 
-    /* (3) Map to individual *file handles*; no reads yet. */
-    let handle_stream =
-      stream::iter(entries.to_vec()).then(|entry| IntermediateSingleEntry::open_handle(entry));
-    pin_mut!(handle_stream);
+    /* (2) Map to individual file handles and/or in-memory "immediate" zip files. */
+    let single_entries = try_join_all(
+      entries
+        .iter()
+        .cloned()
+        .map(|entry| IntermediateSingleEntry::open_handle(entry, zip_options)),
+    )
+    .await?;
 
-    /* (4) Add file entries, in order. */
-    while let Some(handle) = handle_stream.next().await {
+    /* (3) Add file entries, in order. */
+    let intermediate_output = Arc::new(Mutex::new(intermediate_output));
+    for intermediate_entry in single_entries.into_iter() {
       let intermediate_output = intermediate_output.clone();
-      match handle? {
+      match intermediate_entry {
         IntermediateSingleEntry::Directory(name) => {
           task::spawn_blocking(move || {
             let mut intermediate_output = intermediate_output.lock();
             intermediate_output.add_directory(name.into_string(), zip_options)?;
-            Ok::<(), MedusaZipError>(())
+            Ok::<(), ZipError>(())
           })
           .await??;
         },
@@ -235,13 +268,22 @@ impl MedusaZip {
             let mut intermediate_output = intermediate_output.lock();
             intermediate_output.start_file(name.into_string(), zip_options)?;
             std::io::copy(&mut handle, &mut *intermediate_output)?;
-            Ok::<(), MedusaZipError>(())
+            Ok::<(), ZipError>(())
+          })
+          .await??;
+        },
+        IntermediateSingleEntry::ImmediateFile(archive) => {
+          task::spawn_blocking(move || {
+            let mut intermediate_output = intermediate_output.lock();
+            intermediate_output.merge_archive(archive)?;
+            Ok::<(), ZipError>(())
           })
           .await??;
         },
       }
     }
 
+    /* (4) Convert the intermediate write archive into a file-backed read archive. */
     let temp_for_read = task::spawn_blocking(move || {
       let mut zip_wrapper = Arc::into_inner(intermediate_output)
         .expect("no other references should exist to intermediate_output")
