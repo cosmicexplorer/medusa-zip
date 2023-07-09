@@ -13,15 +13,13 @@ use crate::{EntryName, FileSource};
 
 use clap::{Args, ValueEnum};
 use displaydoc::Display;
-use futures::{
-  future::try_join_all,
-  stream::{FuturesOrdered, StreamExt},
-};
+use futures::{future::try_join_all, stream::StreamExt};
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use tempfile::tempfile;
 use thiserror::Error;
-use tokio::{fs, io, task, sync::mpsc};
+use tokio::{fs, io, sync::mpsc, task};
+use tokio_stream::wrappers::ReceiverStream;
 use zip::{self, result::ZipError, ZipArchive, ZipWriter};
 
 use std::{
@@ -83,7 +81,7 @@ pub enum InputConsistencyError {
 }
 
 #[derive(Clone, Debug)]
-enum ZipEntrySpecification {
+pub enum ZipEntrySpecification {
   File(FileSource),
   Directory(EntryName),
 }
@@ -166,9 +164,12 @@ pub enum MedusaInputReadError {
   Zip(#[from] ZipError),
   /// error joining: {0}
   Join(#[from] task::JoinError),
+  /// failed to send intermediate entry: {0:?}
+  Send(#[from] mpsc::error::SendError<IntermediateSingleEntry>),
 }
 
-enum IntermediateSingleEntry {
+#[derive(Debug)]
+pub enum IntermediateSingleEntry {
   Directory(EntryName),
   File(EntryName, std::fs::File),
   ImmediateFile(ZipArchive<std::io::Cursor<Vec<u8>>>),
@@ -228,7 +229,9 @@ pub struct MedusaZip {
 
 /* FIXME: make the later zips have more files than the earlier ones, so they can take longer to
  * complete (need to fully pipeline to make this useful)! */
-const ENTRIES_PER_INTERMEDIATE: usize = 1_000;
+const INTERMEDIATE_ZIP_THREADS: usize = 20;
+
+const PARALLEL_ENTRIES: usize = 20;
 
 impl MedusaZip {
   async fn zip_intermediate(
@@ -244,17 +247,22 @@ impl MedusaZip {
     .await??;
 
     /* (2) Map to individual file handles and/or in-memory "immediate" zip files. */
-    let mut single_entries = entries
-      .iter()
-      .cloned()
-      .map(|entry| IntermediateSingleEntry::open_handle(entry, zip_options))
-      .collect::<FuturesOrdered<_>>();
+    let (handle_tx, handle_rx) = mpsc::channel::<IntermediateSingleEntry>(PARALLEL_ENTRIES);
+    let entries = entries.to_vec();
+    let handle_stream_task = task::spawn(async move {
+      for entry in entries.into_iter() {
+        let handle = IntermediateSingleEntry::open_handle(entry, zip_options).await?;
+        handle_tx.send(handle).await?;
+      }
+      Ok::<(), MedusaInputReadError>(())
+    });
+    let mut handle_jobs = ReceiverStream::new(handle_rx);
 
     /* (3) Add file entries, in order. */
     let intermediate_output = Arc::new(Mutex::new(intermediate_output));
-    while let Some(intermediate_entry) = single_entries.next().await {
+    while let Some(intermediate_entry) = handle_jobs.next().await {
       let intermediate_output = intermediate_output.clone();
-      match intermediate_entry? {
+      match intermediate_entry {
         IntermediateSingleEntry::Directory(name) => {
           task::spawn_blocking(move || {
             let mut intermediate_output = intermediate_output.lock();
@@ -282,6 +290,7 @@ impl MedusaZip {
         },
       }
     }
+    handle_stream_task.await??;
 
     /* (4) Convert the intermediate write archive into a file-backed read archive. */
     let temp_for_read = task::spawn_blocking(move || {
@@ -293,7 +302,7 @@ impl MedusaZip {
     })
     .await??;
 
-    Ok::<_, MedusaZipError>(temp_for_read)
+    Ok(temp_for_read)
   }
 
   pub async fn zip<Output>(self, output_zip: ZipWriter<Output>) -> Result<Output, MedusaZipError>
@@ -312,9 +321,14 @@ impl MedusaZip {
 
     /* (1) Split into however many subtasks (which may just be one) to do "normally". */
     /* TODO: fully recursive? or just one level of recursion? */
+    let chunk_size: usize = if entries.len() >= INTERMEDIATE_ZIP_THREADS {
+      entries.len() / INTERMEDIATE_ZIP_THREADS
+    } else {
+      entries.len()
+    };
     let ordered_intermediates = try_join_all(
       entries
-        .chunks(ENTRIES_PER_INTERMEDIATE)
+        .chunks(chunk_size)
         .map(|entries| Self::zip_intermediate(entries, zip_options)),
     )
     .await?;

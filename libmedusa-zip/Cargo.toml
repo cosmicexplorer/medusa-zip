@@ -16,7 +16,7 @@ rayon                   = "1.7"
 serde                   = { version = "1", features = ["derive"] }
 tempfile                = "3"
 thiserror               = "1.0.30"
-tokio                   = { version = "1.29", features = ["fs", "io-util", "rt"] }
+tokio                   = { version = "1.29", features = ["fs", "io-util", "rt", "sync"] }
 tokio-stream            = { version = "0.1", features = ["fs"] }
 zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "6e21499038ed5af0d0676c6a706d332714617dbf" }
 # zip                     = { path = "/home/cosmicexplorer/tools/zip" }
