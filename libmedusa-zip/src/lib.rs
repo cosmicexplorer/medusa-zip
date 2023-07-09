@@ -358,6 +358,7 @@ pub mod zip {
     }
   }
 
+  /* TODO: read file into mem or keep it as a handle! */
   /* enum  */
 
   enum IntermediateSingleEntry {
@@ -366,6 +367,19 @@ pub mod zip {
   }
 
   impl IntermediateSingleEntry {
+    pub fn open_handle_sync(entry: ZipEntrySpecification) -> Result<Self, MedusaInputReadError> {
+      match entry {
+        ZipEntrySpecification::Directory(name) => Ok(Self::Directory(name)),
+        ZipEntrySpecification::File(FileSource { name, source }) => {
+          let handle = std::fs::OpenOptions::new()
+            .read(true)
+            .open(&source)
+            .map_err(|e| MedusaInputReadError::SourceNotFound(source, e))?;
+          Ok(Self::File(name, handle))
+        },
+      }
+    }
+
     pub async fn open_handle(entry: ZipEntrySpecification) -> Result<Self, MedusaInputReadError> {
       match entry {
         ZipEntrySpecification::Directory(name) => Ok(Self::Directory(name)),
@@ -386,9 +400,64 @@ pub mod zip {
     pub options: MedusaZipOptions,
   }
 
-  const ENTRIES_PER_INTERMEDIATE: usize = 100;
+  const ENTRIES_PER_INTERMEDIATE: usize = 1_000;
 
   impl MedusaZip {
+    async fn zip_intermediate(
+      entries: &[ZipEntrySpecification],
+      zip_options: zip::write::FileOptions,
+    ) -> Result<ZipArchive<std::fs::File>, MedusaZipError> {
+      eprintln!("here!");
+      /* (2) Create unnamed filesystem-backed temp file handle. */
+      let intermediate_output = Arc::new(Mutex::new(task::spawn_blocking(|| {
+        let temp_file = tempfile()?;
+        let zip_wrapper = ZipWriter::new(temp_file);
+        Ok::<_, MedusaZipError>(zip_wrapper)
+      })
+      .await??));
+
+      /* (3) Map to individual *file handles*; no reads yet. */
+      let handle_stream =
+        stream::iter(entries.to_vec()).then(|entry| IntermediateSingleEntry::open_handle(entry));
+      pin_mut!(handle_stream);
+
+      /* (4) Add file entries, in order. */
+      while let Some(handle) = handle_stream.next().await {
+        eprintln!("here2!");
+        let intermediate_output = intermediate_output.clone();
+        match handle? {
+          IntermediateSingleEntry::Directory(name) => {
+            task::spawn_blocking(move || {
+              let mut intermediate_output = intermediate_output.lock();
+              intermediate_output.add_directory(name.into_string(), zip_options)?;
+              Ok::<(), MedusaZipError>(())
+            })
+            .await??;
+          },
+          IntermediateSingleEntry::File(name, mut handle) => {
+            task::spawn_blocking(move || {
+              let mut intermediate_output = intermediate_output.lock();
+              intermediate_output.start_file(name.into_string(), zip_options)?;
+              std::io::copy(&mut handle, &mut *intermediate_output)?;
+              Ok::<(), MedusaZipError>(())
+            })
+            .await??;
+          },
+        }
+      }
+
+      let temp_for_read = task::spawn_blocking(move || {
+        let mut zip_wrapper = Arc::into_inner(intermediate_output)
+          .expect("no other references should exist to intermediate_output")
+          .into_inner();
+        let temp_file = zip_wrapper.finish()?;
+        ZipArchive::new(temp_file)
+      })
+      .await??;
+
+      Ok::<_, MedusaZipError>(temp_for_read)
+    }
+
     pub async fn zip<Output>(self, output_zip: ZipWriter<Output>) -> Result<Output, MedusaZipError>
     where
       Output: Write + Seek + Send + 'static,
@@ -406,56 +475,18 @@ pub mod zip {
 
       /* (1) Split into however many subtasks (which may just be one) to do "normally". */
       /* TODO: fully recursive? or just one level of recursion? */
-      let ordered_intermediates =
-        stream::iter(entries.chunks(ENTRIES_PER_INTERMEDIATE)).then(|entries| async {
-          /* (2) Create unnamed filesystem-backed temp file handle. */
-          let intermediate_output = Arc::new(Mutex::new(
-            task::spawn_blocking(|| {
-              let temp_file = tempfile()?;
-              let zip_wrapper = ZipWriter::new(temp_file);
-              Ok::<_, MedusaZipError>(zip_wrapper)
-            })
-            .await??,
-          ));
-
-          /* (3) Map to individual *file handles*; no reads yet. */
-          let handle_stream = stream::iter(entries.to_vec())
-            .then(|entry| IntermediateSingleEntry::open_handle(entry));
-          pin_mut!(handle_stream);
-
-          while let Some(handle) = handle_stream.next().await {
-            let intermediate_output = intermediate_output.clone();
-            match handle? {
-              IntermediateSingleEntry::Directory(name) => {
-                task::spawn_blocking(move || {
-                  let mut intermediate_output = intermediate_output.lock();
-                  intermediate_output.add_directory(name.into_string(), zip_options)?;
-                  Ok::<(), MedusaZipError>(())
-                })
-                .await??;
-              },
-              IntermediateSingleEntry::File(name, mut handle) => {
-                task::spawn_blocking(move || {
-                  let mut intermediate_output = intermediate_output.lock();
-                  intermediate_output.start_file(name.into_string(), zip_options)?;
-                  std::io::copy(&mut handle, &mut *intermediate_output)?;
-                  Ok::<(), MedusaZipError>(())
-                })
-                .await??;
-              },
-            }
-          }
-
-          let temp_for_read = task::spawn_blocking(move || {
-            let mut zip_wrapper = Arc::into_inner(intermediate_output)
-              .expect("no other references should exist to intermediate_output")
-              .into_inner();
-            let temp_file = zip_wrapper.finish()?;
-            ZipArchive::new(temp_file)
-          })
-          .await??;
-          Ok::<_, MedusaZipError>(temp_for_read)
-        });
+      /* entries */
+      /*   .chunks(ENTRIES_PER_INTERMEDIATE) */
+      /*   .map(|entries| { */
+      /*     let temp_file = tempfile().expect("TODO temp file creation"); */
+      /*     let mut zip_wrapper = ZipWriter::new(temp_file); */
+      /*     entries */
+      /*       .par_iter() */
+      /*       .map(|entry| IntermediateSingleEntry::open_handle_sync(entry).expect("TODO file open")) */
+      /*   }) */
+      /*   .for_each(|intermediate_zip| {}); */
+      let ordered_intermediates = stream::iter(entries.chunks(ENTRIES_PER_INTERMEDIATE))
+        .then(|entries| Self::zip_intermediate(entries, zip_options));
       pin_mut!(ordered_intermediates);
 
       let output_zip = Arc::new(Mutex::new(output_zip));
