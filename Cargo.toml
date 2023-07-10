@@ -10,6 +10,7 @@ edition                 = "2021"
 clap                    = { version = "4.3.11", features = ["derive"] }
 displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
 libmedusa-zip           = { path = "./libmedusa-zip" }
+regex                   = "1"
 serde_json              = "1.0"
 thiserror               = "1.0.30"
 tokio                   = { version = "1.29", features = ["macros", "rt", "rt-multi-thread"] }

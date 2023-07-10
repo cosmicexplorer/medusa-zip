@@ -74,7 +74,11 @@ mod cli {
       /// the top-level `paths`.
       Crawl {
         /// ???
-        paths: Vec<PathBuf>, /* TODO: ignores */
+        #[arg()]
+        paths: Vec<PathBuf>,
+        /// File path regex patterns to ignore.
+        #[arg(short, long, default_values_t = Vec::<String>::new())]
+        ignores: Vec<String>,
       },
       /// Consume a JSON object from [`Self::Crawl`] over stdin and write those
       /// files into a zip file at `output`.
@@ -113,6 +117,7 @@ mod cli {
     };
 
     use displaydoc::Display;
+    use regex::{self, RegexSet};
     use thiserror::Error;
     use zip::{read::ZipArchive, result::ZipError, write::ZipWriter};
 
@@ -146,6 +151,8 @@ mod cli {
       Destination(#[from] DestinationError),
       /// error writing to output zip: {0}
       OutputZip(#[from] ZipError),
+      /// error generating pattern from ignore regex: {0}
+      Regex(#[from] regex::Error),
     }
 
     impl Cli {
@@ -153,9 +160,10 @@ mod cli {
         let Self { command } = self;
 
         match command {
-          Command::Crawl { paths } => {
+          Command::Crawl { paths, ignores } => {
             let crawl = MedusaCrawl {
               paths_to_crawl: paths,
+              ignore_patterns: RegexSet::new(ignores)?,
             };
             let crawl_result = crawl.crawl_paths().await?;
             let crawl_json = serde_json::to_string(&crawl_result)?;
