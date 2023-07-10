@@ -70,12 +70,18 @@ impl ResolvedPath {
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct CrawlResult {
   pub real_file_paths: Vec<ResolvedPath>,
 }
 
 impl CrawlResult {
+  pub(crate) fn single(path: ResolvedPath) -> Self {
+    Self {
+      real_file_paths: vec![path],
+    }
+  }
+
   pub(crate) fn merge(results: Vec<Self>) -> Self {
     let merged_file_paths: Vec<ResolvedPath> = results
       .into_iter()
@@ -113,6 +119,22 @@ impl CrawlResult {
   }
 }
 
+struct Ignores {
+  patterns: RegexSet,
+}
+
+impl Ignores {
+  pub fn new(patterns: RegexSet) -> Self {
+    Self { patterns }
+  }
+
+  pub fn should_ignore(&self, path: &Path) -> bool {
+    let Self { patterns } = self;
+    let path_str = format!("{}", path.display());
+    patterns.is_match(&path_str)
+  }
+}
+
 #[derive(Debug)]
 enum Entry {
   Symlink(ResolvedPath),
@@ -120,8 +142,29 @@ enum Entry {
   File(ResolvedPath),
 }
 
+impl Entry {
+  fn as_resolved_path(&self) -> &ResolvedPath {
+    match self {
+      Self::Symlink(p) => p,
+      Self::Directory(p) => p,
+      Self::File(p) => p,
+    }
+  }
+
+  pub fn should_ignore_this(&self, ignores: &Ignores) -> bool {
+    let ResolvedPath {
+      unresolved_path, ..
+    } = self.as_resolved_path();
+    /* NB: Because we are doing regex-based matching, we are intentionally not taking into account
+     * matching against any idea of filesystem structure. To this end, our "ignores" will not
+     * detect if a symlink leads to a path which itself is ignored, but only whether the path
+     * before expanding any symlinks matches the regex pattern. */
+    ignores.should_ignore(unresolved_path)
+  }
+}
+
 #[derive(Debug)]
-pub enum Input {
+enum Input {
   Path(ResolvedPath),
   /// The `ResolvedPath` corresponds to the parent directory.
   DirEntry(ResolvedPath, fs::DirEntry),
@@ -150,22 +193,13 @@ impl Input {
   }
 
   #[async_recursion]
-  pub(crate) async fn crawl_single(
-    self,
-    ignore_patterns: &RegexSet,
-  ) -> Result<CrawlResult, MedusaCrawlError> {
-    match self.classify().await? {
-      Entry::File(resolved_path) => {
-        let unresolved_path_str = format!("{}", &resolved_path.unresolved_path.display());
-        let should_ignore_path = ignore_patterns.is_match(&unresolved_path_str);
-        Ok(CrawlResult {
-          real_file_paths: if should_ignore_path {
-            vec![]
-          } else {
-            vec![resolved_path]
-          },
-        })
-      },
+  pub async fn crawl_single(self, ignores: &Ignores) -> Result<CrawlResult, MedusaCrawlError> {
+    let classified = self.classify().await?;
+    if classified.should_ignore_this(ignores) {
+      return Ok(CrawlResult::default());
+    }
+    match classified {
+      Entry::File(resolved_path) => Ok(CrawlResult::single(resolved_path)),
       Entry::Symlink(ResolvedPath {
         unresolved_path,
         resolved_path,
@@ -179,13 +213,13 @@ impl Input {
           unresolved_path,
           resolved_path: new_path,
         });
-        Ok(inner.crawl_single(ignore_patterns).await?)
+        Ok(inner.crawl_single(ignores).await?)
       },
       Entry::Directory(parent_resolved_path) => {
         let results = ReadDirStream::new(fs::read_dir(&parent_resolved_path.resolved_path).await?)
           .then(|dir_entry| async {
             let inner = Self::DirEntry(parent_resolved_path.clone(), dir_entry?);
-            inner.crawl_single(ignore_patterns).await
+            inner.crawl_single(ignores).await
           })
           .collect::<Vec<Result<CrawlResult, MedusaCrawlError>>>()
           .await
@@ -209,11 +243,12 @@ impl MedusaCrawl {
       paths_to_crawl,
       ignore_patterns,
     } = self;
+    let ignores = Ignores::new(ignore_patterns);
 
     let results: Vec<CrawlResult> = try_join_all(
       paths_to_crawl
         .into_iter()
-        .map(|path| Input::Path(ResolvedPath::from_path(path)).crawl_single(&ignore_patterns)),
+        .map(|path| Input::Path(ResolvedPath::from_path(path)).crawl_single(&ignores)),
     )
     .await?;
     Ok(CrawlResult::merge(results))
