@@ -69,13 +69,28 @@ pub enum MedusaNameFormatError {
   NameHasDoubleSlash(String),
 }
 
-#[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EntryName(String);
 
 impl fmt::Display for EntryName {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     let Self(name) = self;
     write!(f, "'{}'", name)
+  }
+}
+
+/* FIXME: cache the splitting by components instead of doing it upon every cmp! */
+impl cmp::PartialOrd for EntryName {
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+    self
+      .split_components()
+      .partial_cmp(&other.split_components())
+  }
+}
+
+impl cmp::Ord for EntryName {
+  fn cmp(&self, other: &Self) -> cmp::Ordering {
+    self.split_components().cmp(&other.split_components())
   }
 }
 
