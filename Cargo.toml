@@ -8,14 +8,13 @@ edition                 = "2021"
 
 [dependencies]
 clap                    = { version = "4.3.11", features = ["derive"] }
-displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
+displaydoc              = { workspace = true }
 libmedusa-zip           = { path = "./libmedusa-zip" }
 regex                   = "1"
 serde_json              = "1.0"
-thiserror               = "1.0.30"
-tokio                   = { version = "1.29", features = ["io-util", "io-std", "macros", "rt-multi-thread"] }
-zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "6e21499038ed5af0d0676c6a706d332714617dbf" }
-# zip                     = { path = "/home/cosmicexplorer/tools/zip" }
+thiserror               = { workspace = true }
+tokio                   = { version = "1.29.1", features = ["io-util", "io-std", "macros", "rt-multi-thread"] }
+zip                     = { workspace = true }
 
 [workspace]
 members                 = [
@@ -26,3 +25,9 @@ default-members         = [
     ".",
     "./libmedusa-zip",
 ]
+
+[workspace.dependencies]
+displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
+thiserror               = "1.0.30"
+zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "b117b18c5a18d98bf5d9d465983a89a475d3228f" }
+# zip                     = { path = "/home/cosmicexplorer/tools/zip" }

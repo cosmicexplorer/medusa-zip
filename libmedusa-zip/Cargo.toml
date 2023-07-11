@@ -9,18 +9,17 @@ edition                 = "2021"
 [dependencies]
 async-recursion         = "1"
 clap                    = { version = "4", features = ["derive"] }
-displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
+displaydoc              = { workspace = true }
 futures                 = "0.3"
 parking_lot             = "0.12"
 rayon                   = "1.7"
 regex                   = "1"
 serde                   = { version = "1", features = ["derive"] }
 tempfile                = "3"
-thiserror               = "1.0.30"
+thiserror               = { workspace = true }
 tokio                   = { version = "1.29", features = ["fs", "io-util", "rt", "sync"] }
 tokio-stream            = { version = "0.1", features = ["fs"] }
-zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "6e21499038ed5af0d0676c6a706d332714617dbf" }
-# zip                     = { path = "/home/cosmicexplorer/tools/zip" }
+zip                     = { workspace = true }
 
 [dev-dependencies]
 proptest                = "1"
