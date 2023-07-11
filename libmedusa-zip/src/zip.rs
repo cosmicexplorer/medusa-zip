@@ -231,6 +231,7 @@ pub struct MedusaZip {
  * complete (need to fully pipeline to make this useful)! */
 const INTERMEDIATE_ZIP_THREADS: usize = 20;
 
+/* TODO: make these configurable!!! */
 const PARALLEL_ENTRIES: usize = 20;
 
 impl MedusaZip {

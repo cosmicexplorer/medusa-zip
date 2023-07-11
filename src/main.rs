@@ -92,8 +92,8 @@ mod cli {
       Merge {
         #[command(flatten)]
         output: Output,
-        /// ???
-        sources: Vec<PathBuf>,
+        #[command(flatten)]
+        options: MedusaZipOptions,
       },
     }
 
@@ -112,21 +112,17 @@ mod cli {
     use super::{Cli, Command, Output};
 
     use libmedusa_zip::{
-      CrawlResult, DestinationError, MedusaCrawl, MedusaCrawlError, MedusaNameFormatError,
-      MedusaZipError,
+      CrawlResult, DestinationError, MedusaCrawl, MedusaCrawlError, MedusaMerge, MedusaMergeError,
+      MedusaNameFormatError, MedusaZipError,
     };
 
     use displaydoc::Display;
     use regex::{self, RegexSet};
     use thiserror::Error;
-    use zip::{read::ZipArchive, result::ZipError, write::ZipWriter};
+    use tokio::io::{self, AsyncReadExt};
+    use zip::write::ZipWriter;
 
     use serde_json;
-
-    use std::{
-      fs,
-      io::{self, Read},
-    };
 
     impl Output {
       pub async fn initialize(self) -> Result<ZipWriter<std::fs::File>, DestinationError> {
@@ -143,14 +139,14 @@ mod cli {
       MedusaCrawl(#[from] MedusaCrawlError),
       /// error in zip entry name: {0}
       MedusaNameFormat(#[from] MedusaNameFormatError),
+      /// error in merging zips: {0}
+      MedusaMerge(#[from] MedusaMergeError),
       /// error performing top-level i/o: {0}
       Io(#[from] io::Error),
       /// error de/serializing json: {0}
       Json(#[from] serde_json::Error),
       /// error creating output zip file: {0}
       Destination(#[from] DestinationError),
-      /// error writing to output zip: {0}
-      OutputZip(#[from] ZipError),
       /// error generating pattern from ignore regex: {0}
       Regex(#[from] regex::Error),
     }
@@ -177,7 +173,7 @@ mod cli {
 
             /* Read json serialization from stdin. */
             let mut input_json: Vec<u8> = Vec::new();
-            io::stdin().lock().read_to_end(&mut input_json)?;
+            io::stdin().read_to_end(&mut input_json).await?;
             let crawl_result: CrawlResult = serde_json::from_slice(&input_json)?;
 
             /* Apply options from command line to produce a zip spec. */
@@ -187,18 +183,18 @@ mod cli {
             /* TODO: log the file output! */
             let _output_file_handle = crawled_zip.zip(output_zip).await?;
           },
-          Command::Merge { output, sources } => {
+          Command::Merge { output, options } => {
             /* Initialize output stream. */
-            let mut output_zip = output.initialize().await?;
+            let output_zip = output.initialize().await?;
+
+            /* Read json serialization from stdin. */
+            let mut input_json: Vec<u8> = Vec::new();
+            io::stdin().read_to_end(&mut input_json).await?;
+            let merge_spec: MedusaMerge = serde_json::from_slice(&input_json)?;
 
             /* Copy over constituent zips into current. */
-            for source_zip_path in sources.into_iter() {
-              let source_file = fs::OpenOptions::new().read(true).open(&source_zip_path)?;
-              let source_zip = ZipArchive::new(source_file)?;
-              output_zip.merge_archive(source_zip)?;
-            }
-
-            let _output_file_handle = output_zip.finish()?;
+            /* TODO: log the file output! */
+            let _output_file_handle = merge_spec.merge(output_zip, options).await?;
           },
         }
 

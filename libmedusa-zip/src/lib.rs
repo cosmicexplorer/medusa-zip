@@ -47,6 +47,7 @@
 #![allow(clippy::mutex_atomic)]
 
 use displaydoc::Display;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use std::cmp;
@@ -66,7 +67,7 @@ pub enum MedusaNameFormatError {
   NameHasDoubleSlash(String),
 }
 
-#[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialOrd, Ord, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EntryName(String);
 
 impl fmt::Display for EntryName {
@@ -132,15 +133,20 @@ impl cmp::Ord for FileSource {
   }
 }
 
+/* FIXME: make these modules public! */
 mod destination;
 pub use destination::{DestinationBehavior, DestinationError};
-
-mod zip;
-pub use crate::zip::{MedusaZip, MedusaZipError, MedusaZipOptions, Reproducibility};
 
 mod crawl;
 pub use crawl::{CrawlResult, MedusaCrawl, MedusaCrawlError};
 
+mod zip;
+pub use crate::zip::{MedusaZip, MedusaZipError, MedusaZipOptions, Reproducibility};
+
+mod merge;
+pub use merge::{MedusaMerge, MedusaMergeError, MergeGroup};
+
+/* FIXME: add tests! */
 /* #[cfg(test)] */
 /* mod test { */
 /* use super::*; */
