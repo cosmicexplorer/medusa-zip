@@ -263,6 +263,12 @@ impl IntermediateSingleEntry {
           .map_err(|e| MedusaInputReadError::SourceNotFound(source, e))?
           .len() as usize;
 
+        /* FIXME: handle the case of extremely large files: begin trying to buffer large files in
+         * memory ahead of time, but only up to a certain number. This will allow a single
+         * intermediate zip to start buffering the results to multiple large files at once instead
+         * of getting blocked on a single processor thread. */
+        /* NB: can do this by converting a Self::File() into a stream that writes a zip archive
+         * into a tempfile (not just in-mem), then returns a ZipArchive of the tempfile. */
         let mut handle = handle.into_std().await;
         /* If the file is large, we avoid trying to read it yet. */
         if reported_len > SMALL_FILE_MAX_SIZE {
