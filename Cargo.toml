@@ -29,5 +29,5 @@ default-members         = [
 [workspace.dependencies]
 displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
 thiserror               = "1.0.30"
-zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "b117b18c5a18d98bf5d9d465983a89a475d3228f" }
+zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "784e26c5380aa08dee0c8abdd8b0581014aff49d" }
 # zip                     = { path = "/home/cosmicexplorer/tools/zip" }
