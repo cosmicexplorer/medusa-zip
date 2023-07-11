@@ -16,12 +16,14 @@ use crate::{
 use async_recursion::async_recursion;
 use displaydoc::Display;
 use futures::{future::try_join_all, stream::StreamExt};
+use rayon::prelude::*;
 use regex::RegexSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{fs, io};
 use tokio_stream::wrappers::ReadDirStream;
 
+use std::env;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Display, Error)]
@@ -48,6 +50,23 @@ pub struct ResolvedPath {
 }
 
 impl ResolvedPath {
+  /* TODO: encapsulate this parsing into separate types! */
+  pub(crate) fn clean_up_for_export(&mut self, cwd: &Path) {
+    let Self {
+      unresolved_path,
+      resolved_path,
+    } = self;
+    if let Ok(stripped) = resolved_path.strip_prefix(".") {
+      *resolved_path = stripped.to_path_buf();
+    }
+    if !resolved_path.is_absolute() {
+      *resolved_path = cwd.join(&resolved_path);
+    }
+    if let Ok(stripped) = unresolved_path.strip_prefix(".") {
+      *unresolved_path = stripped.to_path_buf();
+    }
+  }
+
   pub fn from_path(path: PathBuf) -> Self {
     Self {
       unresolved_path: path.clone(),
@@ -78,20 +97,27 @@ pub struct CrawlResult {
 }
 
 impl CrawlResult {
-  pub(crate) fn single(path: ResolvedPath) -> Self {
+  pub fn single(path: ResolvedPath) -> Self {
     Self {
       real_file_paths: vec![path],
     }
   }
 
-  pub(crate) fn merge(results: Vec<Self>) -> Self {
+  pub fn merge(results: Vec<Self>) -> Self {
     let merged_file_paths: Vec<ResolvedPath> = results
-      .into_iter()
+      .into_par_iter()
       .flat_map(|Self { real_file_paths }| real_file_paths)
       .collect();
     Self {
       real_file_paths: merged_file_paths,
     }
+  }
+
+  pub(crate) fn clean_up_for_export(&mut self, cwd: &Path) {
+    let Self { real_file_paths } = self;
+    real_file_paths
+      .par_iter_mut()
+      .for_each(|resolved_path| resolved_path.clean_up_for_export(cwd));
   }
 
   pub fn medusa_zip(
@@ -101,7 +127,7 @@ impl CrawlResult {
   ) -> Result<MedusaZip, MedusaNameFormatError> {
     let Self { real_file_paths } = self;
     let input_files: Vec<FileSource> = real_file_paths
-      .into_iter()
+      .into_par_iter()
       .map(
         |ResolvedPath {
            unresolved_path,
@@ -258,6 +284,11 @@ impl MedusaCrawl {
         .map(|path| Input::Path(ResolvedPath::from_path(path)).crawl_single(&ignores)),
     )
     .await?;
-    Ok(CrawlResult::merge(results))
+    let mut result = CrawlResult::merge(results);
+
+    let cwd = env::current_dir()?;
+    result.clean_up_for_export(&cwd);
+
+    Ok(result)
   }
 }

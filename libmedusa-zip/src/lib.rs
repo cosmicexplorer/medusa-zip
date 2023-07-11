@@ -61,6 +61,8 @@ pub enum MedusaNameFormatError {
   NameIsEmpty,
   /// name starts with '/': {0}
   NameStartsWithSlash(String),
+  /// name starts wtih './': {0}
+  NameStartsWithDotSlash(String),
   /// name ends with '/': {0}
   NameEndsWithSlash(String),
   /// name has '//': {0}
@@ -101,6 +103,11 @@ impl EntryName {
     } else if name.starts_with('/') {
       /* We won't produce any non-relative paths. */
       Err(MedusaNameFormatError::NameStartsWithSlash(name.to_string()))
+    } else if name.starts_with("./") {
+      /* We refuse to try to process ./ paths, asking the user to strip them instead. */
+      Err(MedusaNameFormatError::NameStartsWithDotSlash(
+        name.to_string(),
+      ))
     } else if name.ends_with('/') {
       /* We only enter file names. */
       Err(MedusaNameFormatError::NameEndsWithSlash(name.to_string()))
