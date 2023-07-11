@@ -9,7 +9,9 @@
 
 //! ???
 
-use crate::{EntryName, FileSource, MedusaNameFormatError, MedusaZip, MedusaZipOptions};
+use crate::{
+  EntryModifications, EntryName, FileSource, MedusaNameFormatError, MedusaZip, ZipOutputOptions,
+};
 
 use async_recursion::async_recursion;
 use displaydoc::Display;
@@ -92,7 +94,11 @@ impl CrawlResult {
     }
   }
 
-  pub fn medusa_zip(self, options: MedusaZipOptions) -> Result<MedusaZip, MedusaNameFormatError> {
+  pub fn medusa_zip(
+    self,
+    zip_options: ZipOutputOptions,
+    modifications: EntryModifications,
+  ) -> Result<MedusaZip, MedusaNameFormatError> {
     let Self { real_file_paths } = self;
     let input_files: Vec<FileSource> = real_file_paths
       .into_iter()
@@ -114,7 +120,8 @@ impl CrawlResult {
       .collect::<Result<Vec<FileSource>, _>>()?;
     Ok(MedusaZip {
       input_files,
-      options,
+      zip_options,
+      modifications,
     })
   }
 }

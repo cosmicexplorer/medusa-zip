@@ -9,7 +9,7 @@
 
 //! ???
 
-use crate::{EntryName, MedusaZipOptions};
+use crate::{EntryName, ZipOutputOptions};
 
 use displaydoc::Display;
 use futures::stream::StreamExt;
@@ -42,6 +42,7 @@ pub struct MergeGroup {
   pub sources: Vec<PathBuf>,
 }
 
+/* FIXME: make this parse from clap CLI options, not json! */
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct MedusaMerge {
   pub groups: Vec<MergeGroup>,
@@ -58,14 +59,13 @@ impl MedusaMerge {
   pub async fn merge<Output>(
     self,
     output_zip: ZipWriter<Output>,
-    options: MedusaZipOptions,
+    options: ZipOutputOptions,
   ) -> Result<Output, MedusaMergeError>
   where
     Output: Write + Seek + Send + 'static,
   {
     let Self { groups } = self;
-    let MedusaZipOptions { reproducibility } = options;
-    let zip_options = reproducibility.zip_options();
+    let zip_options = options.zip_options();
 
     let (handle_tx, handle_rx) = mpsc::channel::<IntermediateMergeEntry>(PARALLEL_MERGE_ENTRIES);
     let mut handle_jobs = ReceiverStream::new(handle_rx);

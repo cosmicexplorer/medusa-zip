@@ -78,9 +78,21 @@ impl fmt::Display for EntryName {
 }
 
 impl EntryName {
-  pub fn into_string(self) -> String {
+  pub(crate) fn empty() -> Self {
+    Self("".to_string())
+  }
+
+  pub(crate) fn into_string(self) -> String {
     let Self(name) = self;
     name
+  }
+
+  pub(crate) fn prefix(&mut self, prefix: &str) {
+    if prefix.is_empty() {
+      return;
+    }
+    let Self(name) = self;
+    *name = format!("{}/{}", prefix, name);
   }
 
   pub fn validate(name: String) -> Result<Self, MedusaNameFormatError> {
@@ -99,9 +111,13 @@ impl EntryName {
     }
   }
 
-  pub fn split_directory_components(&self) -> Vec<String> {
+  pub fn split_components(&self) -> Vec<&str> {
     let Self(name) = self;
-    let mut dir_components: Vec<String> = name.split('/').map(|s| s.to_string()).collect();
+    name.split('/').collect()
+  }
+
+  pub(crate) fn directory_components(&self) -> Vec<&str> {
+    let mut dir_components = self.split_components();
     /* Discard the file name itself. */
     dir_components
       .pop()
@@ -141,7 +157,9 @@ mod crawl;
 pub use crawl::{CrawlResult, MedusaCrawl, MedusaCrawlError};
 
 mod zip;
-pub use crate::zip::{MedusaZip, MedusaZipError, MedusaZipOptions, Reproducibility};
+pub use crate::zip::{
+  EntryModifications, MedusaZip, MedusaZipError, Reproducibility, ZipOutputOptions,
+};
 
 mod merge;
 pub use merge::{MedusaMerge, MedusaMergeError, MergeGroup};

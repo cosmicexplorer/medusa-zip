@@ -52,7 +52,7 @@ use clap::Parser as _;
 
 mod cli {
   mod args {
-    use libmedusa_zip::{DestinationBehavior, MedusaZipOptions};
+    use libmedusa_zip::{DestinationBehavior, EntryModifications, ZipOutputOptions};
 
     use clap::{Args, Parser, Subcommand};
 
@@ -86,18 +86,20 @@ mod cli {
         #[command(flatten)]
         output: Output,
         #[command(flatten)]
-        options: MedusaZipOptions,
+        zip_options: ZipOutputOptions,
+        #[command(flatten)]
+        modifications: EntryModifications,
       },
       /// Merge the content of several zip files into one.
       Merge {
         #[command(flatten)]
         output: Output,
         #[command(flatten)]
-        options: MedusaZipOptions,
+        zip_options: ZipOutputOptions,
       },
     }
 
-    /// Crawl file paths and produce zip files with some level of i/o and
+    /// crawl file paths and produce zip files with some level of i/o and
     /// compute parallelism.
     #[derive(Parser, Debug)]
     #[command(author, version, about, long_about = None)]
@@ -167,7 +169,11 @@ mod cli {
             /* Print json serialization to stdout. */
             println!("{}", crawl_json);
           },
-          Command::Zip { output, options } => {
+          Command::Zip {
+            output,
+            zip_options,
+            modifications,
+          } => {
             /* Initialize output stream. */
             let output_zip = output.initialize().await?;
 
@@ -177,13 +183,16 @@ mod cli {
             let crawl_result: CrawlResult = serde_json::from_slice(&input_json)?;
 
             /* Apply options from command line to produce a zip spec. */
-            let crawled_zip = crawl_result.medusa_zip(options)?;
+            let crawled_zip = crawl_result.medusa_zip(zip_options, modifications)?;
 
             /* Do the parallel zip!!! */
             /* TODO: log the file output! */
             let _output_file_handle = crawled_zip.zip(output_zip).await?;
           },
-          Command::Merge { output, options } => {
+          Command::Merge {
+            output,
+            zip_options,
+          } => {
             /* Initialize output stream. */
             let output_zip = output.initialize().await?;
 
@@ -194,7 +203,7 @@ mod cli {
 
             /* Copy over constituent zips into current. */
             /* TODO: log the file output! */
-            let _output_file_handle = merge_spec.merge(output_zip, options).await?;
+            let _output_file_handle = merge_spec.merge(output_zip, zip_options).await?;
           },
         }
 

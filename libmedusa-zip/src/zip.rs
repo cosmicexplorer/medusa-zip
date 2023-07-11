@@ -9,7 +9,7 @@
 
 //! ???
 
-use crate::{EntryName, FileSource};
+use crate::{EntryName, FileSource, MedusaNameFormatError};
 
 use clap::{Args, ValueEnum};
 use displaydoc::Display;
@@ -25,7 +25,8 @@ use zip::{self, result::ZipError, ZipArchive, ZipWriter};
 use std::{
   cmp,
   io::{Seek, Write},
-  path::PathBuf,
+  mem,
+  path::{Path, PathBuf},
   sync::Arc,
 };
 
@@ -54,30 +55,42 @@ pub enum Reproducibility {
   CurrentTime,
 }
 
-impl Reproducibility {
-  pub(crate) fn zip_options(self) -> zip::write::FileOptions {
-    match self {
-      Reproducibility::CurrentTime => zip::write::FileOptions::default(),
+#[derive(Copy, Clone, Default, Debug, Args)]
+pub struct ZipOutputOptions {
+  /// Reproducibility behavior when generating zip archives.
+  #[arg(value_enum, default_value_t, short, long)]
+  pub reproducibility: Reproducibility,
+}
+
+impl ZipOutputOptions {
+  pub fn zip_options(self) -> zip::write::FileOptions {
+    let Self { reproducibility } = self;
+    let options = zip::write::FileOptions::default();
+    match reproducibility {
+      Reproducibility::CurrentTime => options,
       Reproducibility::Reproducible => {
         let time = zip::DateTime::from_date_and_time(1980, 1, 1, 0, 0, 0)
           .expect("zero date should be valid");
-        zip::write::FileOptions::default().last_modified_time(time)
+        options.last_modified_time(time)
       },
     }
   }
 }
 
-#[derive(Copy, Clone, Default, Debug, Args)]
-pub struct MedusaZipOptions {
-  /// Reproducibility behavior when generating zip archives.
-  #[arg(value_enum, default_value_t, short, long)]
-  pub reproducibility: Reproducibility,
+#[derive(Clone, Default, Debug, Args)]
+pub struct EntryModifications {
+  #[arg(long, default_value = None)]
+  pub silent_external_prefix: Option<String>,
+  #[arg(long, default_value = None)]
+  pub own_prefix: Option<String>,
 }
 
 #[derive(Debug, Display, Error)]
 pub enum InputConsistencyError {
   /// name {0} was duplicated for source paths {1:?} and {2:?}
   DuplicateName(EntryName, PathBuf, PathBuf),
+  /// error in name formatting: {0}
+  NameFormat(#[from] MedusaNameFormatError),
 }
 
 #[derive(Clone, Debug)]
@@ -89,34 +102,82 @@ pub enum ZipEntrySpecification {
 struct EntrySpecificationList(pub Vec<ZipEntrySpecification>);
 
 impl EntrySpecificationList {
-  pub fn from_file_specs(mut specs: Vec<FileSource>) -> Result<Self, InputConsistencyError> {
+  pub fn from_file_specs(
+    mut specs: Vec<FileSource>,
+    modifications: EntryModifications,
+  ) -> Result<Self, InputConsistencyError> {
     /* Sort the resulting files so we can expect them to (mostly) be an inorder
      * directory traversal. Directories with names less than top-level
      * files will be sorted above those top-level files, which matches pex's Chroot behavior. */
     specs.par_sort_unstable();
     /* Check for duplicate names. */
     {
-      let mut prev_name = EntryName("".to_string());
-      let mut prev_path = PathBuf::from("");
+      let i = EntryName::empty();
+      let p = PathBuf::from("");
+      let mut prev_name: &EntryName = &i;
+      let mut prev_path: &Path = &p;
       for FileSource { source, name } in specs.iter() {
-        if name == &prev_name {
+        if name == prev_name {
           return Err(InputConsistencyError::DuplicateName(
             name.clone(),
-            prev_path,
+            prev_path.to_path_buf(),
             source.clone(),
           ));
         }
-        prev_name = name.clone();
-        prev_path = source.clone();
+        prev_name = name;
+        prev_path = source;
       }
     }
 
     let mut ret: Vec<ZipEntrySpecification> = Vec::new();
-    let mut previous_directory_components: Vec<String> = Vec::new();
-    for FileSource { source, name } in specs.into_iter() {
+
+    let cached_prefix: String = {
+      /* FIXME: perform this validation in  clap Arg derivation for EntryName! */
+      let EntryModifications {
+        silent_external_prefix,
+        own_prefix,
+      } = modifications;
+      let silent_external_prefix: Vec<String> = silent_external_prefix
+        .map(EntryName::validate)
+        .transpose()?
+        .map(|name| {
+          name
+            .split_components()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+      let own_prefix: Vec<String> = own_prefix
+        .map(EntryName::validate)
+        .transpose()?
+        .map(|name| {
+          name
+            .split_components()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+      let mut cur_prefix: Vec<String> = silent_external_prefix;
+      for component in own_prefix.into_iter() {
+        cur_prefix.push(component);
+        let cur_intermediate_directory: String = cur_prefix.join("/");
+        let intermediate_dir = EntryName::validate(cur_intermediate_directory)
+          .expect("constructed virtual directory should be fine");
+        ret.push(ZipEntrySpecification::Directory(intermediate_dir));
+      }
+      cur_prefix.join("/")
+    };
+
+    let mut previous_directory_components: Vec<&str> = Vec::new();
+
+    /* TODO: explain why .iter_mut() is used here (to share dir components) over .into_iter()! */
+    for FileSource { source, name } in specs.iter_mut() {
       /* Split into directory components so we can add directory entries before any
        * files from that directory. */
-      let current_directory_components = name.split_directory_components();
+      let current_directory_components = name.directory_components();
 
       /* Find the directory components shared between the previous and next
        * entries. */
@@ -140,8 +201,9 @@ impl EntrySpecificationList {
           assert!(!cur_intermediate_components.is_empty());
           let cur_intermediate_directory: String = cur_intermediate_components.join("/");
 
-          let intermediate_dir = EntryName::validate(cur_intermediate_directory)
+          let mut intermediate_dir = EntryName::validate(cur_intermediate_directory)
             .expect("constructed virtual directory should be fine");
+          intermediate_dir.prefix(&cached_prefix);
           ret.push(ZipEntrySpecification::Directory(intermediate_dir));
         }
       }
@@ -149,7 +211,12 @@ impl EntrySpecificationList {
       previous_directory_components = current_directory_components;
 
       /* Finally we can just write the actual file now! */
-      ret.push(ZipEntrySpecification::File(FileSource { source, name }));
+      let mut name = name.clone();
+      name.prefix(&cached_prefix);
+      ret.push(ZipEntrySpecification::File(FileSource {
+        source: mem::take(source),
+        name,
+      }));
     }
 
     Ok(Self(ret))
@@ -224,7 +291,8 @@ impl IntermediateSingleEntry {
 
 pub struct MedusaZip {
   pub input_files: Vec<FileSource>,
-  pub options: MedusaZipOptions,
+  pub zip_options: ZipOutputOptions,
+  pub modifications: EntryModifications,
 }
 
 /* FIXME: make the later zips have more files than the earlier ones, so they can take longer to
@@ -312,13 +380,15 @@ impl MedusaZip {
   {
     let Self {
       input_files,
-      options,
+      zip_options,
+      modifications,
     } = self;
-    let MedusaZipOptions { reproducibility } = options;
-    let zip_options = reproducibility.zip_options();
+    let zip_options = zip_options.zip_options();
 
-    let EntrySpecificationList(entries) =
-      task::spawn_blocking(move || EntrySpecificationList::from_file_specs(input_files)).await??;
+    let EntrySpecificationList(entries) = task::spawn_blocking(move || {
+      EntrySpecificationList::from_file_specs(input_files, modifications)
+    })
+    .await??;
 
     /* (1) Split into however many subtasks (which may just be one) to do "normally". */
     /* TODO: fully recursive? or just one level of recursion? */
