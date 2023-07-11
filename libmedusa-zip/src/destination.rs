@@ -36,6 +36,10 @@ pub enum DestinationBehavior {
   AppendOrFail,
   /// Append if the file already exists, otherwise create it.
   OptimisticallyAppend,
+  /// Open the file in append mode, but don't try to read any zip info from it.
+  ///
+  /// This is useful for creating e.g. PEX files or other self-executing zips with a shebang line.
+  AppendToNonZip,
 }
 
 impl DestinationBehavior {
@@ -82,6 +86,14 @@ impl DestinationBehavior {
             },
           },
         }
+      },
+      Self::AppendToNonZip => {
+        let f = fs::OpenOptions::new()
+          .write(true)
+          .append(true)
+          .open(path)
+          .await?;
+        (f, false)
       },
     };
     let file = file.into_std().await;
