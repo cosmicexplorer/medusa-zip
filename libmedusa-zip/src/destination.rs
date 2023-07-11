@@ -12,7 +12,11 @@
 use clap::ValueEnum;
 use displaydoc::Display;
 use thiserror::Error;
-use tokio::{fs, io, task};
+use tokio::{
+  fs,
+  io::{self, AsyncSeekExt},
+  task,
+};
 use zip::{result::ZipError, ZipWriter};
 
 use std::path::Path;
@@ -57,7 +61,6 @@ impl DestinationBehavior {
       Self::AppendOrFail => {
         let f = fs::OpenOptions::new()
           .write(true)
-          .append(true)
           .read(true)
           .open(path)
           .await?;
@@ -75,7 +78,6 @@ impl DestinationBehavior {
             io::ErrorKind::AlreadyExists => {
               let f = fs::OpenOptions::new()
                 .write(true)
-                .append(true)
                 .read(true)
                 .open(path)
                 .await?;
@@ -88,11 +90,17 @@ impl DestinationBehavior {
         }
       },
       Self::AppendToNonZip => {
-        let f = fs::OpenOptions::new()
+        let mut f = fs::OpenOptions::new()
           .write(true)
-          .append(true)
+          .read(true)
           .open(path)
           .await?;
+        /* NB: do NOT!!! open the file for append!!! It will only BREAK EVERYTHING IN MYSTERIOUS
+         * WAYS by constantly moving the seek cursor! Opening with ::new_append() will seek to the
+         * end for us, but in this case we want to write to a file that *doesn't* already have zip
+         * data, so we need to tell the file handle to go to the end before giving it to the zip
+         * library. */
+        f.seek(io::SeekFrom::End(0)).await?;
         (f, false)
       },
     };

@@ -52,7 +52,7 @@ use clap::Parser as _;
 
 mod cli {
   mod args {
-    use libmedusa_zip::{DestinationBehavior, EntryModifications, ZipOutputOptions};
+    use libmedusa_zip::{DestinationBehavior, EntryModifications, Parallelism, ZipOutputOptions};
 
     use clap::{Args, Parser, Subcommand};
 
@@ -89,6 +89,9 @@ mod cli {
         zip_options: ZipOutputOptions,
         #[command(flatten)]
         modifications: EntryModifications,
+        /// ???
+        #[arg(short, long, value_enum, default_value_t)]
+        parallelism: Parallelism,
       },
       /// Merge the content of several zip files into one.
       Merge {
@@ -173,6 +176,7 @@ mod cli {
             output,
             zip_options,
             modifications,
+            parallelism,
           } => {
             /* Initialize output stream. */
             let output_zip = output.initialize().await?;
@@ -183,7 +187,7 @@ mod cli {
             let crawl_result: CrawlResult = serde_json::from_slice(&input_json)?;
 
             /* Apply options from command line to produce a zip spec. */
-            let crawled_zip = crawl_result.medusa_zip(zip_options, modifications)?;
+            let crawled_zip = crawl_result.medusa_zip(zip_options, modifications, parallelism)?;
 
             /* Do the parallel zip!!! */
             /* TODO: log the file output! */

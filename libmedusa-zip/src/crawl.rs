@@ -10,7 +10,8 @@
 //! ???
 
 use crate::{
-  EntryModifications, EntryName, FileSource, MedusaNameFormatError, MedusaZip, ZipOutputOptions,
+  EntryModifications, EntryName, FileSource, MedusaNameFormatError, MedusaZip, Parallelism,
+  ZipOutputOptions,
 };
 
 use async_recursion::async_recursion;
@@ -124,6 +125,7 @@ impl CrawlResult {
     self,
     zip_options: ZipOutputOptions,
     modifications: EntryModifications,
+    parallelism: Parallelism,
   ) -> Result<MedusaZip, MedusaNameFormatError> {
     let Self { real_file_paths } = self;
     let input_files: Vec<FileSource> = real_file_paths
@@ -148,6 +150,7 @@ impl CrawlResult {
       input_files,
       zip_options,
       modifications,
+      parallelism,
     })
   }
 }

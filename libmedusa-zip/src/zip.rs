@@ -62,6 +62,7 @@ pub struct ZipOutputOptions {
   pub reproducibility: Reproducibility,
 }
 
+/* TODO: use Compression::Stored if the file is small enough! */
 impl ZipOutputOptions {
   pub fn zip_options(self) -> zip::write::FileOptions {
     let Self { reproducibility } = self;
@@ -295,10 +296,20 @@ impl IntermediateSingleEntry {
   }
 }
 
+#[derive(Copy, Clone, Default, Debug, ValueEnum)]
+pub enum Parallelism {
+  /// Read source files and copy them to the output zip in order.
+  #[default]
+  Synchronous,
+  /// Parallelize creation by splitting up the input into chunks;
+  ParallelMerge,
+}
+
 pub struct MedusaZip {
   pub input_files: Vec<FileSource>,
   pub zip_options: ZipOutputOptions,
   pub modifications: EntryModifications,
+  pub parallelism: Parallelism,
 }
 
 /* FIXME: make the later zips have more files than the earlier ones, so they can take longer to
@@ -380,22 +391,14 @@ impl MedusaZip {
     Ok(temp_for_read)
   }
 
-  pub async fn zip<Output>(self, output_zip: ZipWriter<Output>) -> Result<Output, MedusaZipError>
+  async fn zip_parallel<Output>(
+    entries: Vec<ZipEntrySpecification>,
+    output_zip: Arc<Mutex<ZipWriter<Output>>>,
+    zip_options: zip::write::FileOptions,
+  ) -> Result<(), MedusaZipError>
   where
     Output: Write + Seek + Send + 'static,
   {
-    let Self {
-      input_files,
-      zip_options,
-      modifications,
-    } = self;
-    let zip_options = zip_options.zip_options();
-
-    let EntrySpecificationList(entries) = task::spawn_blocking(move || {
-      EntrySpecificationList::from_file_specs(input_files, modifications)
-    })
-    .await??;
-
     /* (1) Split into however many subtasks (which may just be one) to do "normally". */
     /* TODO: fully recursive? or just one level of recursion? */
     let chunk_size: usize = if entries.len() >= INTERMEDIATE_ZIP_THREADS {
@@ -411,7 +414,6 @@ impl MedusaZip {
     .await?;
 
     /* TODO: start piping in the first intermediate file as soon as it's ready! */
-    let output_zip = Arc::new(Mutex::new(output_zip));
     for intermediate_zip in ordered_intermediates.into_iter() {
       let output_zip = output_zip.clone();
       task::spawn_blocking(move || {
@@ -419,6 +421,77 @@ impl MedusaZip {
         Ok::<(), MedusaZipError>(())
       })
       .await??;
+    }
+
+    Ok(())
+  }
+
+  async fn zip_synchronous<Output>(
+    entries: Vec<ZipEntrySpecification>,
+    output_zip: Arc<Mutex<ZipWriter<Output>>>,
+    zip_options: zip::write::FileOptions,
+  ) -> Result<(), MedusaZipError>
+  where
+    Output: Write + Seek + Send + 'static,
+  {
+    for entry in entries.into_iter() {
+      let output_zip = output_zip.clone();
+      match entry {
+        ZipEntrySpecification::Directory(name) => {
+          task::spawn_blocking(move || {
+            let mut output_zip = output_zip.lock();
+            output_zip.add_directory(name.into_string(), zip_options)?;
+            Ok::<(), ZipError>(())
+          })
+          .await??;
+        },
+        ZipEntrySpecification::File(FileSource { name, source }) => {
+          let mut f = fs::OpenOptions::new()
+            .read(true)
+            .open(&source)
+            .await
+            .map_err(|e| MedusaInputReadError::SourceNotFound(source, e))?
+            .into_std()
+            .await;
+          task::spawn_blocking(move || {
+            let mut output_zip = output_zip.lock();
+            output_zip.start_file(name.into_string(), zip_options)?;
+            std::io::copy(&mut f, &mut *output_zip)?;
+            Ok::<(), MedusaZipError>(())
+          })
+          .await??;
+        },
+      }
+    }
+
+    Ok(())
+  }
+
+  pub async fn zip<Output>(self, output_zip: ZipWriter<Output>) -> Result<Output, MedusaZipError>
+  where
+    Output: Write + Seek + Send + 'static,
+  {
+    let Self {
+      input_files,
+      zip_options,
+      modifications,
+      parallelism,
+    } = self;
+    let zip_options = zip_options.zip_options();
+
+    let EntrySpecificationList(entries) = task::spawn_blocking(move || {
+      EntrySpecificationList::from_file_specs(input_files, modifications)
+    })
+    .await??;
+
+    let output_zip = Arc::new(Mutex::new(output_zip));
+    match parallelism {
+      Parallelism::Synchronous => {
+        Self::zip_synchronous(entries, output_zip.clone(), zip_options).await?;
+      },
+      Parallelism::ParallelMerge => {
+        Self::zip_parallel(entries, output_zip.clone(), zip_options).await?;
+      },
     }
 
     let output_handle = task::spawn_blocking(move || {
