@@ -97,8 +97,6 @@ mod cli {
       Merge {
         #[command(flatten)]
         output: Output,
-        #[command(flatten)]
-        zip_options: ZipOutputOptions,
       },
     }
 
@@ -193,10 +191,7 @@ mod cli {
             /* TODO: log the file output! */
             let _output_file_handle = crawled_zip.zip(output_zip).await?;
           },
-          Command::Merge {
-            output,
-            zip_options,
-          } => {
+          Command::Merge { output } => {
             /* Initialize output stream. */
             let output_zip = output.initialize().await?;
 
@@ -207,7 +202,7 @@ mod cli {
 
             /* Copy over constituent zips into current. */
             /* TODO: log the file output! */
-            let _output_file_handle = merge_spec.merge(output_zip, zip_options).await?;
+            let _output_file_handle = merge_spec.merge(output_zip).await?;
           },
         }
 

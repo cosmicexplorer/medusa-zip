@@ -180,7 +180,7 @@ pub use crawl::{CrawlResult, MedusaCrawl, MedusaCrawlError};
 
 mod zip;
 pub use crate::zip::{
-  EntryModifications, MedusaZip, MedusaZipError, Parallelism, Reproducibility, ZipOutputOptions,
+  EntryModifications, MedusaZip, MedusaZipError, Parallelism, ModifiedTimeBehavior, ZipOutputOptions,
 };
 
 mod merge;

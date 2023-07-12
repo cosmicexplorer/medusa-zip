@@ -9,7 +9,7 @@
 
 //! ???
 
-use crate::{EntryName, ZipOutputOptions};
+use crate::EntryName;
 
 use displaydoc::Display;
 use futures::stream::StreamExt;
@@ -18,11 +18,17 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{fs, io, sync::mpsc, task};
 use tokio_stream::wrappers::ReceiverStream;
-use zip::{read::ZipArchive, result::ZipError, write::ZipWriter};
+use zip::{
+  read::ZipArchive,
+  result::ZipError,
+  write::{FileOptions as ZipLibFileOptions, ZipWriter},
+};
 
-use std::io::{Seek, Write};
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::{
+  io::{Seek, Write},
+  path::PathBuf,
+  sync::Arc,
+};
 
 #[derive(Debug, Display, Error)]
 pub enum MedusaMergeError {
@@ -59,13 +65,15 @@ impl MedusaMerge {
   pub async fn merge<Output>(
     self,
     output_zip: ZipWriter<Output>,
-    options: ZipOutputOptions,
   ) -> Result<Output, MedusaMergeError>
   where
-    Output: Write + Seek + Send + 'static,
+    Output: Write+Seek+Send+'static,
   {
     let Self { groups } = self;
-    let zip_options = options.zip_options();
+    /* NB: we only add directories in between merging zips here, and it doesn't
+     * make sense to also accept a zip_output parameter that won't be used at
+     * all. */
+    let zip_options = ZipLibFileOptions::default();
 
     let (handle_tx, handle_rx) = mpsc::channel::<IntermediateMergeEntry>(PARALLEL_MERGE_ENTRIES);
     let mut handle_jobs = ReceiverStream::new(handle_rx);

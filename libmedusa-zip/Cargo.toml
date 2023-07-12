@@ -7,16 +7,20 @@ edition                 = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait             = "0.1.71"
 async-recursion         = "1"
+cfg-if = "1.0"
 clap                    = { version = "4", features = ["derive"] }
 displaydoc              = { workspace = true }
 futures                 = "0.3"
+lazy_static             = "1.4"
 parking_lot             = "0.12"
 rayon                   = "1.7"
 regex                   = "1"
 serde                   = { version = "1", features = ["derive"] }
 tempfile                = "3"
 thiserror               = { workspace = true }
+time                    = "0.3.23"
 tokio                   = { version = "1.29", features = ["fs", "io-util", "rt", "sync"] }
 tokio-stream            = { version = "0.1", features = ["fs"] }
 zip                     = { workspace = true }
