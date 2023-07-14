@@ -11,7 +11,7 @@
 
 use crate::{
   zip::{calculate_new_rightmost_components, DefaultInitializeZipOptions},
-  EntryName, ModifiedTimeBehavior,
+  EntryName, MedusaNameFormatError, ModifiedTimeBehavior,
 };
 
 use displaydoc::Display;
@@ -28,6 +28,7 @@ use zip::{
 };
 
 use std::{
+  convert::{TryFrom, TryInto},
   io::{Seek, Write},
   path::PathBuf,
   sync::Arc,
@@ -45,14 +46,51 @@ pub enum MedusaMergeError {
   Send(#[from] mpsc::error::SendError<IntermediateMergeEntry>),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct MergeGroup {
   pub prefix: Option<EntryName>,
   pub sources: Vec<PathBuf>,
 }
 
-/* FIXME: make this parse from clap CLI options, not json! */
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeGroupArg {
+  pub prefix: Option<String>,
+  pub sources: Vec<PathBuf>,
+}
+
+impl TryFrom<MergeGroupArg> for MergeGroup {
+  type Error = MedusaNameFormatError;
+
+  fn try_from(x: MergeGroupArg) -> Result<Self, Self::Error> {
+    let MergeGroupArg { prefix, sources } = x;
+    let prefix = match prefix {
+      None => None,
+      Some(prefix) => Some(EntryName::validate(prefix)?),
+    };
+    Ok(Self { prefix, sources })
+  }
+}
+
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct MedusaMergeSpec {
+  pub groups: Vec<MergeGroupArg>,
+}
+
+impl TryFrom<MedusaMergeSpec> for MedusaMerge {
+  type Error = MedusaNameFormatError;
+
+  fn try_from(x: MedusaMergeSpec) -> Result<Self, Self::Error> {
+    let MedusaMergeSpec { groups } = x;
+    let groups: Vec<MergeGroup> = groups
+      .into_iter()
+      .map(|g| g.try_into())
+      .collect::<Result<Vec<MergeGroup>, MedusaNameFormatError>>()?;
+    Ok(Self { groups })
+  }
+}
+
+/* TODO: make this parse from clap CLI options, not json! */
+#[derive(Default, Debug, Clone)]
 pub struct MedusaMerge {
   pub groups: Vec<MergeGroup>,
 }
@@ -83,7 +121,7 @@ impl MedusaMerge {
       for MergeGroup { prefix, sources } in groups.into_iter() {
         let current_directory_components: Vec<String> = prefix
           .map(|e| {
-            e.parent_components()
+            e.all_components()
               .map(|s| s.to_string())
               .collect::<Vec<_>>()
           })

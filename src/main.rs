@@ -115,7 +115,7 @@ mod cli {
 
     use libmedusa_zip::{
       CrawlResult, DestinationError, MedusaCrawl, MedusaCrawlError, MedusaMerge, MedusaMergeError,
-      MedusaNameFormatError, MedusaZipError,
+      MedusaMergeSpec, MedusaNameFormatError, MedusaZipError,
     };
 
     use displaydoc::Display;
@@ -124,6 +124,8 @@ mod cli {
     use zip::write::ZipWriter;
 
     use serde_json;
+
+    use std::convert::TryInto;
 
     impl Output {
       pub async fn initialize(self) -> Result<ZipWriter<std::fs::File>, DestinationError> {
@@ -197,7 +199,8 @@ mod cli {
             /* Read json serialization from stdin. */
             let mut input_json: Vec<u8> = Vec::new();
             io::stdin().read_to_end(&mut input_json).await?;
-            let merge_spec: MedusaMerge = serde_json::from_slice(&input_json)?;
+            let merge_spec: MedusaMergeSpec = serde_json::from_slice(&input_json)?;
+            let merge_spec: MedusaMerge = merge_spec.try_into()?;
 
             /* Copy over constituent zips into current. */
             /* TODO: log the file output! */

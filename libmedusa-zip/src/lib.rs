@@ -46,7 +46,6 @@
 #![allow(clippy::mutex_atomic)]
 
 use displaydoc::Display;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use std::{cmp, fmt, ops::Range, path::PathBuf};
@@ -68,7 +67,7 @@ pub enum MedusaNameFormatError {
 
 /* TODO: figure out how to make this represent both file and directory names
  * without coughing up blood. */
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EntryName {
   name: String,
   components: Vec<Range<usize>>,
@@ -195,7 +194,7 @@ pub use crate::zip::{
 };
 
 mod merge;
-pub use merge::{MedusaMerge, MedusaMergeError, MergeGroup};
+pub use merge::{MedusaMerge, MedusaMergeError, MergeGroup, MedusaMergeSpec};
 
 mod util;
 
