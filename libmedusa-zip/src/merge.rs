@@ -70,9 +70,6 @@ impl MedusaMerge {
     Output: Write+Seek+Send+'static,
   {
     let Self { groups } = self;
-    /* NB: we only add directories in between merging zips here, and it doesn't
-     * make sense to also accept a zip_output parameter that won't be used at
-     * all. */
     let zip_options = ZipLibFileOptions::default();
 
     let (handle_tx, handle_rx) = mpsc::channel::<IntermediateMergeEntry>(PARALLEL_MERGE_ENTRIES);
@@ -111,7 +108,6 @@ impl MedusaMerge {
         IntermediateMergeEntry::MergeZip(source_archive) => {
           task::spawn_blocking(move || {
             let mut output_zip = output_zip.lock();
-            /* FIXME: enable merging archives without having to read in the whole thing! */
             output_zip.merge_archive(source_archive)?;
             Ok::<(), ZipError>(())
           })

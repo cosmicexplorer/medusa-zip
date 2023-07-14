@@ -9,6 +9,8 @@
 
 //! ???
 
+#[cfg(doc)]
+use crate::MergeGroup;
 use crate::{EntryName, FileSource, MedusaNameFormatError};
 
 use async_trait::async_trait;
@@ -90,12 +92,50 @@ pub trait InitializeZipOptionsForSpecificFile {
 #[derive(Copy, Clone, Default, Debug, ValueEnum)]
 pub enum ModifiedTimeBehavior {
   /// All modification times for entries will be set to 1980-01-1.
-  Reproducible,
-  /// Each file's modification time will be converted into a zip timestamp
-  /// when it is entered into the archive.
-  CurrentTime,
   #[default]
+  Reproducible,
+  /// All modification times for entries will be set to the same timestamp
+  /// recorded when the output zip is created.
+  CurrentTime,
+  /// Each file's modification time on disk will be converted into a zip
+  /// timestamp when it is entered into the archive.
+  ///
+  /// NOTE: this does not apply to directories, as this program does not copy
+  /// directory paths from disk, but instead synthesizes them as necessary
+  /// into the output file based upon the file list. This virtualization of
+  /// directories is currently necessary to make zip file merging unambiguous,
+  /// which is key to this program's ability to parallelize.
+  ///
+  /// As such, an error will be raised if this setting is provided for the
+  /// `merge` operation, as merging zips does not read any file entries from
+  /// disk itself, but instead simply copies them over verbatim from the
+  /// source zip files, and only inserts directories as specified by the
+  /// [`prefix`](MergeGroup::prefix) provided in each each [`MergeGroup`].
+  ///
+  /// **When this setting is provided, unlike files, directories will instead
+  /// have the same behavior as if [`current-time`](Self::CurrentTime) was
+  /// provided.**
+  /* TODO: separate file and directory mtime behavior, go on then! Add a "custom date" option as
+   * well while you're at it. */
   PreserveSourceTime,
+}
+
+lazy_static! {
+  static ref MINIMUM_ZIP_TIME: ZipDateTime = ZipDateTime::default();
+  static ref CURRENT_ZIP_TIME: ZipDateTime = OffsetDateTime::now_utc()
+    .try_into()
+    .expect("current time broke!");
+}
+
+impl DefaultInitializeZipFileOptions for ModifiedTimeBehavior {
+  #[must_use]
+  fn set_zip_options(&self, options: ZipLibraryFileOptions) -> ZipLibraryFileOptions {
+    match self {
+      Self::Reproducible => options.last_modified_time(*MINIMUM_ZIP_TIME),
+      Self::CurrentTime => options.last_modified_time(*CURRENT_ZIP_TIME),
+      Self::PreserveSourceTime => todo!(),
+    }
+  }
 }
 
 #[async_trait]
@@ -106,14 +146,6 @@ impl InitializeZipOptionsForSpecificFile for ModifiedTimeBehavior {
     options: ZipLibraryFileOptions,
     metadata: &std::fs::Metadata,
   ) -> Result<ZipLibraryFileOptions, InitializeZipOptionsError> {
-    /* TODO: cache the argument values here with lazy_static (?)! */
-    lazy_static! {
-      static ref MINIMUM_ZIP_TIME: ZipDateTime = ZipDateTime::default();
-      static ref CURRENT_ZIP_TIME: ZipDateTime = OffsetDateTime::now_utc()
-        .try_into()
-        .expect("current time broke!");
-    }
-
     match self {
       Self::Reproducible => Ok(options.last_modified_time(*MINIMUM_ZIP_TIME)),
       Self::CurrentTime => Ok(options.last_modified_time(*CURRENT_ZIP_TIME)),
@@ -122,7 +154,9 @@ impl InitializeZipOptionsForSpecificFile for ModifiedTimeBehavior {
          * (the docs don't specify which platforms:
          * https://doc.rust-lang.org/nightly/std/fs/struct.Metadata.html#method.modified). */
         let modified_time = metadata.modified()?;
+        dbg!(&modified_time);
         let modified_time: ZipDateTime = OffsetDateTime::from(modified_time).try_into()?;
+        dbg!(&modified_time);
         Ok(options.last_modified_time(modified_time))
       },
     }
@@ -193,9 +227,9 @@ impl InitializeZipOptionsForSpecificFile for LargeFileBehavior {
 #[derive(Copy, Clone, Default, Debug, Display, ValueEnum)]
 pub enum CompressionMethod {
   /// uncompressed
-  #[default]
   Stored,
   /// deflate-compressed
+  #[default]
   Deflated,
   /// bzip2-compressed
   Bzip2,
