@@ -52,7 +52,9 @@ use clap::Parser as _;
 
 mod cli {
   mod args {
-    use libmedusa_zip::{DestinationBehavior, EntryModifications, Parallelism, ZipOutputOptions};
+    use libmedusa_zip::{
+      DestinationBehavior, EntryModifications, ModifiedTimeBehavior, Parallelism, ZipOutputOptions,
+    };
 
     use clap::{Args, Parser, Subcommand};
 
@@ -65,7 +67,7 @@ mod cli {
       pub output: PathBuf,
       /// How to initialize the zip file path to write results to.
       #[arg(value_enum, short, long, default_value_t)]
-      pub behavior: DestinationBehavior,
+      pub destination_behavior: DestinationBehavior,
     }
 
     #[derive(Subcommand, Debug)]
@@ -97,6 +99,8 @@ mod cli {
       Merge {
         #[command(flatten)]
         output: Output,
+        #[command(flatten)]
+        mtime_behavior: ModifiedTimeBehavior,
       },
     }
 
@@ -129,8 +133,11 @@ mod cli {
 
     impl Output {
       pub async fn initialize(self) -> Result<ZipWriter<std::fs::File>, DestinationError> {
-        let Self { output, behavior } = self;
-        behavior.initialize(&output).await
+        let Self {
+          output,
+          destination_behavior,
+        } = self;
+        destination_behavior.initialize(&output).await
       }
     }
 
@@ -191,7 +198,10 @@ mod cli {
             /* TODO: log the file output! */
             let _output_file_handle = crawled_zip.zip(output_zip).await?;
           },
-          Command::Merge { output } => {
+          Command::Merge {
+            output,
+            mtime_behavior,
+          } => {
             /* Initialize output stream. */
             let output_zip = output.initialize().await?;
 
@@ -202,7 +212,7 @@ mod cli {
 
             /* Copy over constituent zips into current. */
             /* TODO: log the file output! */
-            let _output_file_handle = merge_spec.merge(output_zip).await?;
+            let _output_file_handle = merge_spec.merge(mtime_behavior, output_zip).await?;
           },
         }
 
@@ -214,7 +224,10 @@ mod cli {
 
 #[tokio::main]
 async fn main() {
-  let cli = cli::Cli::parse();
+  let cli = match cli::Cli::try_parse() {
+    Ok(cli) => cli,
+    Err(e) => e.exit(),
+  };
 
   cli.run().await.expect("top-level error");
 }

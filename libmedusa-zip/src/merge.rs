@@ -9,7 +9,7 @@
 
 //! ???
 
-use crate::EntryName;
+use crate::{zip::DefaultInitializeZipFileOptions, EntryName, ModifiedTimeBehavior};
 
 use displaydoc::Display;
 use futures::stream::StreamExt;
@@ -21,7 +21,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use zip::{
   read::ZipArchive,
   result::ZipError,
-  write::{FileOptions as ZipLibFileOptions, ZipWriter},
+  write::{FileOptions as ZipLibraryFileOptions, ZipWriter},
 };
 
 use std::{
@@ -64,13 +64,14 @@ const PARALLEL_MERGE_ENTRIES: usize = 10;
 impl MedusaMerge {
   pub async fn merge<Output>(
     self,
+    mtime_behavior: ModifiedTimeBehavior,
     output_zip: ZipWriter<Output>,
   ) -> Result<Output, MedusaMergeError>
   where
     Output: Write+Seek+Send+'static,
   {
     let Self { groups } = self;
-    let zip_options = ZipLibFileOptions::default();
+    let zip_options = mtime_behavior.set_zip_options_static(ZipLibraryFileOptions::default());
 
     let (handle_tx, handle_rx) = mpsc::channel::<IntermediateMergeEntry>(PARALLEL_MERGE_ENTRIES);
     let mut handle_jobs = ReceiverStream::new(handle_rx);

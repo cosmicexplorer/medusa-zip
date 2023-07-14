@@ -15,15 +15,21 @@ use crate::{EntryName, FileSource, MedusaNameFormatError};
 
 use async_trait::async_trait;
 use cfg_if::cfg_if;
-use clap::{Args, ValueEnum};
+use clap::{
+  builder::{TypedValueParser, ValueParserFactory},
+  Args, ValueEnum,
+};
 use displaydoc::Display;
 use futures::{future::try_join_all, stream::StreamExt};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rayon::prelude::*;
+use static_init;
 use tempfile::tempfile;
 use thiserror::Error;
-use time::{error::ComponentRange, OffsetDateTime};
+use time::{
+  error::ComponentRange, format_description::well_known::Rfc3339, OffsetDateTime, UtcOffset,
+};
 use tokio::{fs, io, sync::mpsc, task};
 use tokio_stream::wrappers::ReceiverStream;
 use zip::{
@@ -106,34 +112,48 @@ pub enum AutomaticModifiedTimeStrategy {
   /// directories is currently necessary to make zip file merging unambiguous,
   /// which is key to this program's ability to parallelize.
   ///
-  /// As such, an error will be raised if this setting is provided for the
+  /// **When this setting is provided, unlike files, directories will instead
+  /// have the same behavior as if [`current-time`](Self::CurrentTime) was
+  /// provided.**
+  ///
+  /// As a result, this setting should probably not be provided for the
   /// `merge` operation, as merging zips does not read any file entries from
   /// disk itself, but instead simply copies them over verbatim from the
   /// source zip files, and only inserts directories as specified by the
   /// [`prefix`](MergeGroup::prefix) provided in each each [`MergeGroup`].
-  ///
-  /// **When this setting is provided, unlike files, directories will instead
-  /// have the same behavior as if [`current-time`](Self::CurrentTime) was
-  /// provided.**
-  /* TODO: separate file and directory mtime behavior, go on then! Add a "custom date" option as
-   * well while you're at it. */
   PreserveSourceTime,
 }
 
-lazy_static! {
-  static ref MINIMUM_ZIP_TIME: ZipDateTime = ZipDateTime::default();
-  static ref CURRENT_ZIP_TIME: ZipDateTime = OffsetDateTime::now_utc()
+const MINIMUM_ZIP_TIME: ZipDateTime = ZipDateTime::zero();
+
+/* The `time` crate is extremely touchy about only ever extracting the local
+ * UTC offset within a single-threaded environment, which means it cannot be
+ * called anywhere reachable from the main function if we use #[tokio::main].
+ * static_init instead runs it at program initialization time. */
+#[static_init::dynamic]
+static LOCAL_UTC_OFFSET: UtcOffset =
+  UtcOffset::current_local_offset().expect("failed to capture local UTC offset");
+
+/* We could use the dynamic initialization order to avoid fetching the local
+ * offset twice, but that requires an unsafe block, which we'd prefer to
+ * avoid in this crate. */
+#[static_init::dynamic]
+static CURRENT_LOCAL_TIME: OffsetDateTime =
+  OffsetDateTime::now_local().expect("failed to capture local UTC offset");
+
+static CURRENT_ZIP_TIME: Lazy<ZipDateTime> = Lazy::new(|| {
+  (*CURRENT_LOCAL_TIME)
     .try_into()
-    .expect("current time broke!");
-}
+    .expect("failed to convert local time into zip time at startup")
+});
 
 impl DefaultInitializeZipFileOptions for AutomaticModifiedTimeStrategy {
   #[must_use]
   fn set_zip_options_static(&self, options: ZipLibraryFileOptions) -> ZipLibraryFileOptions {
     match self {
-      Self::Reproducible => options.last_modified_time(*MINIMUM_ZIP_TIME),
+      Self::Reproducible => options.last_modified_time(MINIMUM_ZIP_TIME),
       Self::CurrentTime => options.last_modified_time(*CURRENT_ZIP_TIME),
-      Self::PreserveSourceTime => todo!(),
+      Self::PreserveSourceTime => Self::CurrentTime.set_zip_options_static(options),
     }
   }
 }
@@ -147,29 +167,96 @@ impl InitializeZipOptionsForSpecificFile for AutomaticModifiedTimeStrategy {
     metadata: &std::fs::Metadata,
   ) -> Result<ZipLibraryFileOptions, InitializeZipOptionsError> {
     match self {
-      Self::Reproducible => Ok(options.last_modified_time(*MINIMUM_ZIP_TIME)),
+      Self::Reproducible => Ok(options.last_modified_time(MINIMUM_ZIP_TIME)),
       Self::CurrentTime => Ok(options.last_modified_time(*CURRENT_ZIP_TIME)),
       Self::PreserveSourceTime => {
         /* NB: this is not blocking, but will Err on platforms without this available
          * (the docs don't specify which platforms:
          * https://doc.rust-lang.org/nightly/std/fs/struct.Metadata.html#method.modified). */
         let modified_time = metadata.modified()?;
-        dbg!(&modified_time);
-        let modified_time: ZipDateTime = OffsetDateTime::from(modified_time).try_into()?;
-        dbg!(&modified_time);
+        let modified_time: ZipDateTime = OffsetDateTime::from(modified_time)
+          .to_offset(*LOCAL_UTC_OFFSET)
+          .try_into()?;
         Ok(options.last_modified_time(modified_time))
       },
     }
   }
 }
 
-#[derive(Clone, Debug, Args)]
-pub struct ProvidedModifiedTimestamp {
-  #[arg(long)]
-  pub explicit_mtime_timestamp: String,
+#[derive(Copy, Clone, Debug)]
+pub struct ZipDateTimeWrapper(pub ZipDateTime);
+
+#[derive(Clone)]
+pub struct ZipDateTimeParser;
+
+impl TypedValueParser for ZipDateTimeParser {
+  type Value = ZipDateTimeWrapper;
+
+  fn parse_ref(
+    &self,
+    cmd: &clap::Command,
+    arg: Option<&clap::Arg>,
+    value: &std::ffi::OsStr,
+  ) -> Result<Self::Value, clap::Error> {
+    let inner = clap::builder::StringValueParser::new();
+    let val = inner.parse_ref(cmd, arg, value)?;
+
+    use clap::error::{ContextKind, ContextValue, ErrorKind};
+
+    /* NB: These are the only way the default clap formatter will print out any
+     * additional context. It is ridiculously frustrating. */
+    fn process_error(err: &mut clap::Error, e: impl std::fmt::Display, msg: &str) {
+      err.insert(
+        ContextKind::Usage,
+        ContextValue::StyledStr(format!("Error: {}.", e).into()),
+      );
+      err.insert(
+        ContextKind::Suggested,
+        ContextValue::StyledStrs(vec![msg.to_string().into()]),
+      );
+    }
+
+    let parsed_offset = OffsetDateTime::parse(&val, &Rfc3339).map_err(|e| {
+      let mut err = clap::Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+      if let Some(arg) = arg {
+        err.insert(
+          ContextKind::InvalidArg,
+          ContextValue::String(arg.to_string()),
+        );
+      }
+      err.insert(ContextKind::InvalidValue, ContextValue::String(val.clone()));
+      process_error(
+        &mut err,
+        e,
+        "Provide a string which can be formatted according to RFC 3339, such as '1985-04-12T23:20:50.52Z'. See https://datatracker.ietf.org/doc/html/rfc3339#section-5.6 for details.",
+      );
+      err
+    })?;
+    let zip_time: ZipDateTime = parsed_offset.try_into().map_err(|e| {
+      let mut err = clap::Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+      if let Some(arg) = arg {
+        err.insert(
+          ContextKind::InvalidArg,
+          ContextValue::String(arg.to_string()),
+        );
+      }
+      err.insert(ContextKind::InvalidValue, ContextValue::String(val.clone()));
+      process_error(
+        &mut err,
+        e,
+        "The zip implementation used by this program only supports years from 1980-2107.",
+      );
+      err
+    })?;
+    Ok(ZipDateTimeWrapper(zip_time))
+  }
 }
 
-/* impl DefaultInitializeZipFileOptions for ProvidedModifiedTimestamp {} */
+impl ValueParserFactory for ZipDateTimeWrapper {
+  type Parser = ZipDateTimeParser;
+
+  fn value_parser() -> Self::Parser { ZipDateTimeParser }
+}
 
 #[derive(Copy, Clone, Debug, Default, Args)]
 pub struct ModifiedTimeBehavior {
@@ -177,11 +264,11 @@ pub struct ModifiedTimeBehavior {
     value_enum,
     default_value_t,
     long,
-    /* conflicts_with = "explicit_mtime_timestamp" */
+    conflicts_with = "explicit_mtime_timestamp"
   )]
   pub automatic_mtime_strategy: AutomaticModifiedTimeStrategy,
-  /* #[command(flatten)]
-   * pub provided_timestamp: ProvidedModifiedTimestamp, */
+  #[arg(long, default_value = None)]
+  pub explicit_mtime_timestamp: Option<ZipDateTimeWrapper>,
 }
 
 impl DefaultInitializeZipFileOptions for ModifiedTimeBehavior {
@@ -189,8 +276,12 @@ impl DefaultInitializeZipFileOptions for ModifiedTimeBehavior {
   fn set_zip_options_static(&self, options: ZipLibraryFileOptions) -> ZipLibraryFileOptions {
     let Self {
       automatic_mtime_strategy,
+      explicit_mtime_timestamp,
     } = self;
-    automatic_mtime_strategy.set_zip_options_static(options)
+    match explicit_mtime_timestamp {
+      None => automatic_mtime_strategy.set_zip_options_static(options),
+      Some(ZipDateTimeWrapper(timestamp)) => options.last_modified_time(*timestamp),
+    }
   }
 }
 
@@ -204,10 +295,16 @@ impl InitializeZipOptionsForSpecificFile for ModifiedTimeBehavior {
   ) -> Result<ZipLibraryFileOptions, InitializeZipOptionsError> {
     let Self {
       automatic_mtime_strategy,
+      explicit_mtime_timestamp,
     } = self;
-    automatic_mtime_strategy
-      .set_zip_options_for_file(options, metadata)
-      .await
+    match explicit_mtime_timestamp {
+      None => {
+        automatic_mtime_strategy
+          .set_zip_options_for_file(options, metadata)
+          .await
+      },
+      Some(ZipDateTimeWrapper(timestamp)) => Ok(options.last_modified_time(*timestamp)),
+    }
   }
 }
 
@@ -328,7 +425,9 @@ impl CompressionStrategy {
     match compression_method.clone() {
       CompressionMethod::Stored => match compression_level {
         None => Ok(Self::Stored),
-        Some(level) => Err(ParseCompressionOptionsError::CompressionLevelWithStored(level)),
+        Some(level) => Err(ParseCompressionOptionsError::CompressionLevelWithStored(
+          level,
+        )),
       },
       CompressionMethod::Deflated => match compression_level {
         None => Ok(Self::Deflated(None)),
@@ -411,10 +510,8 @@ impl DefaultInitializeZipFileOptions for CompressionStrategy {
   }
 }
 
-/* TODO: make this Copy again after we make parsing timestamps work via clap! */
-#[derive(Clone, Default, Debug, Args)]
+#[derive(Copy, Clone, Default, Debug, Args)]
 pub struct ZipOutputOptions {
-  /// ModifiedTimeBehavior behavior when generating zip archives.
   #[command(flatten)]
   pub mtime_behavior: ModifiedTimeBehavior,
   #[command(flatten)]
