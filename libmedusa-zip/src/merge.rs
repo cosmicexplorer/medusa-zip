@@ -9,7 +9,10 @@
 
 //! ???
 
-use crate::{zip::DefaultInitializeZipOptions, EntryName, ModifiedTimeBehavior};
+use crate::{
+  zip::{calculate_new_rightmost_components, DefaultInitializeZipOptions},
+  EntryName, ModifiedTimeBehavior,
+};
 
 use displaydoc::Display;
 use futures::stream::StreamExt;
@@ -76,12 +79,29 @@ impl MedusaMerge {
     let (handle_tx, handle_rx) = mpsc::channel::<IntermediateMergeEntry>(PARALLEL_MERGE_ENTRIES);
     let mut handle_jobs = ReceiverStream::new(handle_rx);
     let handle_stream_task = task::spawn(async move {
+      let mut previous_directory_components: Vec<String> = Vec::new();
       for MergeGroup { prefix, sources } in groups.into_iter() {
-        if let Some(name) = prefix {
+        let current_directory_components: Vec<String> = prefix
+          .map(|e| {
+            e.directory_components()
+              .into_iter()
+              .map(|s| s.to_string())
+              .collect::<Vec<_>>()
+          })
+          .unwrap_or_default();
+        for new_rightmost_components in calculate_new_rightmost_components(
+          &previous_directory_components,
+          &current_directory_components,
+        ) {
+          let cur_intermediate_directory: String = new_rightmost_components.join("/");
+          let intermediate_dir = EntryName::validate(cur_intermediate_directory)
+            .expect("constructed virtual directory should be fine");
           handle_tx
-            .send(IntermediateMergeEntry::AddDirectory(name))
+            .send(IntermediateMergeEntry::AddDirectory(intermediate_dir))
             .await?;
         }
+        previous_directory_components = current_directory_components;
+
         for src in sources.into_iter() {
           let handle = fs::OpenOptions::new().read(true).open(&src).await?;
           let handle = handle.into_std().await;

@@ -531,16 +531,43 @@ pub enum ZipEntrySpecification {
 
 struct EntrySpecificationList(pub Vec<ZipEntrySpecification>);
 
+pub fn calculate_new_rightmost_components<'a, T>(
+  previous_directory_components: &[T],
+  current_directory_components: &'a [T],
+) -> impl Iterator<Item=&'a [T]>+'a
+where
+  T: Eq,
+{
+  /* Find the directory components shared between the previous and next
+   * entries. */
+  let mut shared_components: usize = 0;
+  for i in 0..cmp::min(
+    previous_directory_components.len(),
+    current_directory_components.len(),
+  ) {
+    if previous_directory_components[i] != current_directory_components[i] {
+      break;
+    }
+    shared_components += 1;
+  }
+  /* If all components are shared, then we don't need to introduce any new
+   * directories. */
+  (shared_components..current_directory_components.len()).map(|final_component_index| {
+    /* Otherwise, we introduce a new directory for each new dir component of the
+     * current entry. */
+    let cur_intermediate_components = &current_directory_components[..=final_component_index];
+    assert!(!cur_intermediate_components.is_empty());
+    cur_intermediate_components
+  })
+}
+
 impl EntrySpecificationList {
-  pub fn from_file_specs(
-    mut specs: Vec<FileSource>,
-    modifications: EntryModifications,
-  ) -> Result<Self, InputConsistencyError> {
+  fn sort_and_deduplicate(specs: &mut Vec<FileSource>) -> Result<(), InputConsistencyError> {
     /* Sort the resulting files so we can expect them to (mostly) be an inorder
-     * directory traversal. Directories with names less than top-level
-     * files will be sorted above those top-level files, which matches pex's
-     * Chroot behavior. */
+     * directory traversal. Note that directories with names less than top-level
+     * files will be sorted above those top-level files. */
     specs.par_sort_unstable();
+
     /* Check for duplicate names. */
     {
       let i = EntryName::empty();
@@ -559,6 +586,15 @@ impl EntrySpecificationList {
         prev_path = source;
       }
     }
+
+    Ok(())
+  }
+
+  pub fn from_file_specs(
+    mut specs: Vec<FileSource>,
+    modifications: EntryModifications,
+  ) -> Result<Self, InputConsistencyError> {
+    Self::sort_and_deduplicate(&mut specs)?;
 
     let mut ret: Vec<ZipEntrySpecification> = Vec::new();
 
@@ -611,33 +647,15 @@ impl EntrySpecificationList {
        * files from that directory. */
       let current_directory_components = name.directory_components();
 
-      /* Find the directory components shared between the previous and next
-       * entries. */
-      let mut shared_components: usize = 0;
-      for i in 0..cmp::min(
-        previous_directory_components.len(),
-        current_directory_components.len(),
+      for new_rightmost_components in calculate_new_rightmost_components(
+        &previous_directory_components,
+        &current_directory_components,
       ) {
-        if previous_directory_components[i] != current_directory_components[i] {
-          break;
-        }
-        shared_components += 1;
-      }
-      /* If all components are shared, then we don't need to introduce any new
-       * directories. */
-      if shared_components < current_directory_components.len() {
-        for final_component_index in shared_components..current_directory_components.len() {
-          /* Otherwise, we introduce a new directory for each new dir component of the
-           * current entry. */
-          let cur_intermediate_components = &current_directory_components[..=final_component_index];
-          assert!(!cur_intermediate_components.is_empty());
-          let cur_intermediate_directory: String = cur_intermediate_components.join("/");
-
-          let mut intermediate_dir = EntryName::validate(cur_intermediate_directory)
-            .expect("constructed virtual directory should be fine");
-          intermediate_dir.prefix(&cached_prefix);
-          ret.push(ZipEntrySpecification::Directory(intermediate_dir));
-        }
+        let cur_intermediate_directory: String = new_rightmost_components.join("/");
+        let mut intermediate_dir = EntryName::validate(cur_intermediate_directory)
+          .expect("constructed virtual directory should be fine");
+        intermediate_dir.prefix(&cached_prefix);
+        ret.push(ZipEntrySpecification::Directory(intermediate_dir));
       }
       /* Set the "previous" dir components to the components of the current entry. */
       previous_directory_components = current_directory_components;
