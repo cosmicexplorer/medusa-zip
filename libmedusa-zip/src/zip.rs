@@ -13,7 +13,6 @@
 use crate::MergeGroup;
 use crate::{EntryName, FileSource, MedusaNameFormatError};
 
-use async_trait::async_trait;
 use cfg_if::cfg_if;
 use clap::{
   builder::{TypedValueParser, ValueParserFactory},
@@ -70,7 +69,7 @@ pub enum MedusaZipError {
   ProcessZipOptions(#[from] InitializeZipOptionsError),
 }
 
-pub trait DefaultInitializeZipFileOptions {
+pub trait DefaultInitializeZipOptions {
   #[must_use]
   fn set_zip_options_static(&self, options: ZipLibraryFileOptions) -> ZipLibraryFileOptions;
 }
@@ -85,10 +84,9 @@ pub enum InitializeZipOptionsError {
   InvalidOffsetDateTime(#[from] ComponentRange),
 }
 
-#[async_trait]
 pub trait InitializeZipOptionsForSpecificFile {
   #[must_use]
-  async fn set_zip_options_for_file(
+  fn set_zip_options_for_file(
     &self,
     options: ZipLibraryFileOptions,
     metadata: &std::fs::Metadata,
@@ -147,7 +145,7 @@ static CURRENT_ZIP_TIME: Lazy<ZipDateTime> = Lazy::new(|| {
     .expect("failed to convert local time into zip time at startup")
 });
 
-impl DefaultInitializeZipFileOptions for AutomaticModifiedTimeStrategy {
+impl DefaultInitializeZipOptions for AutomaticModifiedTimeStrategy {
   #[must_use]
   fn set_zip_options_static(&self, options: ZipLibraryFileOptions) -> ZipLibraryFileOptions {
     match self {
@@ -158,10 +156,9 @@ impl DefaultInitializeZipFileOptions for AutomaticModifiedTimeStrategy {
   }
 }
 
-#[async_trait]
 impl InitializeZipOptionsForSpecificFile for AutomaticModifiedTimeStrategy {
   #[must_use]
-  async fn set_zip_options_for_file(
+  fn set_zip_options_for_file(
     &self,
     options: ZipLibraryFileOptions,
     metadata: &std::fs::Metadata,
@@ -271,7 +268,7 @@ pub struct ModifiedTimeBehavior {
   pub explicit_mtime_timestamp: Option<ZipDateTimeWrapper>,
 }
 
-impl DefaultInitializeZipFileOptions for ModifiedTimeBehavior {
+impl DefaultInitializeZipOptions for ModifiedTimeBehavior {
   #[must_use]
   fn set_zip_options_static(&self, options: ZipLibraryFileOptions) -> ZipLibraryFileOptions {
     let Self {
@@ -285,10 +282,9 @@ impl DefaultInitializeZipFileOptions for ModifiedTimeBehavior {
   }
 }
 
-#[async_trait]
 impl InitializeZipOptionsForSpecificFile for ModifiedTimeBehavior {
   #[must_use]
-  async fn set_zip_options_for_file(
+  fn set_zip_options_for_file(
     &self,
     options: ZipLibraryFileOptions,
     metadata: &std::fs::Metadata,
@@ -298,11 +294,7 @@ impl InitializeZipOptionsForSpecificFile for ModifiedTimeBehavior {
       explicit_mtime_timestamp,
     } = self;
     match explicit_mtime_timestamp {
-      None => {
-        automatic_mtime_strategy
-          .set_zip_options_for_file(options, metadata)
-          .await
-      },
+      None => automatic_mtime_strategy.set_zip_options_for_file(options, metadata),
       Some(ZipDateTimeWrapper(timestamp)) => Ok(options.last_modified_time(*timestamp)),
     }
   }
@@ -310,10 +302,9 @@ impl InitializeZipOptionsForSpecificFile for ModifiedTimeBehavior {
 
 struct PreservePermsBehavior;
 
-#[async_trait]
 impl InitializeZipOptionsForSpecificFile for PreservePermsBehavior {
   #[must_use]
-  async fn set_zip_options_for_file(
+  fn set_zip_options_for_file(
     &self,
     options: ZipLibraryFileOptions,
     metadata: &std::fs::Metadata,
@@ -335,10 +326,9 @@ const SMALL_FILE_FOR_NO_COMPRESSION_MAX_SIZE: usize = 1_000;
 
 struct SmallFileBehavior;
 
-#[async_trait]
 impl InitializeZipOptionsForSpecificFile for SmallFileBehavior {
   #[must_use]
-  async fn set_zip_options_for_file(
+  fn set_zip_options_for_file(
     &self,
     options: ZipLibraryFileOptions,
     metadata: &std::fs::Metadata,
@@ -357,10 +347,9 @@ impl InitializeZipOptionsForSpecificFile for SmallFileBehavior {
 
 struct LargeFileBehavior;
 
-#[async_trait]
 impl InitializeZipOptionsForSpecificFile for LargeFileBehavior {
   #[must_use]
-  async fn set_zip_options_for_file(
+  fn set_zip_options_for_file(
     &self,
     options: ZipLibraryFileOptions,
     metadata: &std::fs::Metadata,
@@ -479,7 +468,7 @@ impl CompressionStrategy {
   }
 }
 
-impl DefaultInitializeZipFileOptions for CompressionStrategy {
+impl DefaultInitializeZipOptions for CompressionStrategy {
   #[must_use]
   fn set_zip_options_static(&self, options: ZipLibraryFileOptions) -> ZipLibraryFileOptions {
     let (method, level): (ZipCompressionMethod, Option<i8>) = match self {
@@ -726,9 +715,7 @@ impl IntermediateSingleEntry {
           let buf = std::io::Cursor::new(Vec::new());
           let mut mem_zip = ZipWriter::new(buf);
 
-          zip_options = options_initializers
-            .set_zip_options_for_file(zip_options, &metadata)
-            .await?;
+          zip_options = options_initializers.set_zip_options_for_file(zip_options, &metadata)?;
 
           /* FIXME: quit out of buffering if the file is actually larger than
            * reported!!! Also consider doing an async seek of the file to see where it
@@ -778,16 +765,14 @@ pub struct ZipOptionsInitializers {
 }
 
 impl ZipOptionsInitializers {
-  pub async fn set_zip_options_for_file(
+  pub fn set_zip_options_for_file(
     &self,
     mut options: zip::write::FileOptions,
     metadata: &std::fs::Metadata,
   ) -> Result<zip::write::FileOptions, InitializeZipOptionsError> {
     let Self { initializers } = self;
     for initializer in initializers.iter() {
-      options = initializer
-        .set_zip_options_for_file(options, &metadata)
-        .await?;
+      options = initializer.set_zip_options_for_file(options, &metadata)?;
     }
     Ok(options)
   }
@@ -947,9 +932,8 @@ impl MedusaZip {
             .await
             .map_err(|e| MedusaInputReadError::SourceNotFound(source, e))?;
           let metadata = f.metadata().await?;
-          let zip_options = options_initializers
-            .set_zip_options_for_file(zip_options, &metadata)
-            .await?;
+          let zip_options =
+            options_initializers.set_zip_options_for_file(zip_options, &metadata)?;
           let mut f = f.into_std().await;
           task::spawn_blocking(move || {
             let mut output_zip = output_zip.lock();
@@ -983,7 +967,7 @@ impl MedusaZip {
     })
     .await??;
 
-    let static_options_initializers: Vec<Box<dyn DefaultInitializeZipFileOptions>> =
+    let static_options_initializers: Vec<Box<dyn DefaultInitializeZipOptions>> =
       vec![Box::new(mtime_behavior), Box::new(compression_options)];
     let mut zip_options = ZipLibraryFileOptions::default();
     for initializer in static_options_initializers.into_iter() {

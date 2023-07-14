@@ -9,7 +9,7 @@
 
 //! ???
 
-use crate::{zip::DefaultInitializeZipFileOptions, EntryName, ModifiedTimeBehavior};
+use crate::{zip::DefaultInitializeZipOptions, EntryName, ModifiedTimeBehavior};
 
 use displaydoc::Display;
 use futures::stream::StreamExt;
