@@ -83,8 +83,7 @@ impl MedusaMerge {
       for MergeGroup { prefix, sources } in groups.into_iter() {
         let current_directory_components: Vec<String> = prefix
           .map(|e| {
-            e.directory_components()
-              .into_iter()
+            e.parent_components()
               .map(|s| s.to_string())
               .collect::<Vec<_>>()
           })

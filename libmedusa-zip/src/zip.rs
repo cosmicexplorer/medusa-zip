@@ -598,7 +598,7 @@ impl EntrySpecificationList {
 
     let mut ret: Vec<ZipEntrySpecification> = Vec::new();
 
-    let cached_prefix: String = {
+    let cached_prefix: EntryName = {
       /* FIXME: perform this validation in  clap Arg derivation for EntryName! */
       let EntryModifications {
         silent_external_prefix,
@@ -609,8 +609,7 @@ impl EntrySpecificationList {
         .transpose()?
         .map(|name| {
           name
-            .split_components()
-            .into_iter()
+            .all_components()
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
         })
@@ -620,8 +619,7 @@ impl EntrySpecificationList {
         .transpose()?
         .map(|name| {
           name
-            .split_components()
-            .into_iter()
+            .all_components()
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
         })
@@ -635,7 +633,11 @@ impl EntrySpecificationList {
           .expect("constructed virtual directory should be fine");
         ret.push(ZipEntrySpecification::Directory(intermediate_dir));
       }
-      cur_prefix.join("/")
+      if cur_prefix.is_empty() {
+        EntryName::empty()
+      } else {
+        EntryName::validate(cur_prefix.join("/")).unwrap()
+      }
     };
 
     let mut previous_directory_components: Vec<&str> = Vec::new();
@@ -645,7 +647,7 @@ impl EntrySpecificationList {
     for FileSource { source, name } in specs.iter_mut() {
       /* Split into directory components so we can add directory entries before any
        * files from that directory. */
-      let current_directory_components = name.directory_components();
+      let current_directory_components: Vec<&str> = name.parent_components().collect();
 
       for new_rightmost_components in calculate_new_rightmost_components(
         &previous_directory_components,
@@ -654,7 +656,7 @@ impl EntrySpecificationList {
         let cur_intermediate_directory: String = new_rightmost_components.join("/");
         let mut intermediate_dir = EntryName::validate(cur_intermediate_directory)
           .expect("constructed virtual directory should be fine");
-        intermediate_dir.prefix(&cached_prefix);
+        intermediate_dir.add_prefix(&cached_prefix);
         ret.push(ZipEntrySpecification::Directory(intermediate_dir));
       }
       /* Set the "previous" dir components to the components of the current entry. */
@@ -662,7 +664,7 @@ impl EntrySpecificationList {
 
       /* Finally we can just write the actual file now! */
       let mut name = name.clone();
-      name.prefix(&cached_prefix);
+      name.add_prefix(&cached_prefix);
       ret.push(ZipEntrySpecification::File(FileSource {
         source: mem::take(source),
         name,

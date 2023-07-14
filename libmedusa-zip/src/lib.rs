@@ -51,7 +51,7 @@ use displaydoc::Display;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use std::{cmp, fmt, path::PathBuf};
+use std::{cmp, fmt, ops::Range, path::PathBuf};
 
 /// Allowed zip format quirks that we refuse to handle right now.
 #[derive(Debug, Display, Error)]
@@ -68,46 +68,65 @@ pub enum MedusaNameFormatError {
   NameHasDoubleSlash(String),
 }
 
+/* TODO: figure out how to make this represent both file and directory names without coughing up
+ * blood. */
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct EntryName(String);
-
-impl fmt::Display for EntryName {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    let Self(name) = self;
-    write!(f, "'{}'", name)
-  }
+pub struct EntryName {
+  name: String,
+  components: Vec<Range<usize>>,
 }
 
-/* FIXME: cache the splitting by components instead of doing it upon every
- * cmp! */
+impl fmt::Display for EntryName {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "'{}'", self.name) }
+}
+
 impl cmp::PartialOrd for EntryName {
   fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-    self
-      .split_components()
-      .partial_cmp(&other.split_components())
+    self.components_vec().partial_cmp(&other.components_vec())
   }
 }
 
 impl cmp::Ord for EntryName {
   fn cmp(&self, other: &Self) -> cmp::Ordering {
-    self.split_components().cmp(&other.split_components())
+    self.components_vec().cmp(&other.components_vec())
   }
 }
 
 impl EntryName {
-  pub(crate) fn empty() -> Self { Self("".to_string()) }
+  pub(crate) fn is_empty(&self) -> bool { self.name.is_empty() }
 
-  pub(crate) fn into_string(self) -> String {
-    let Self(name) = self;
-    name
+  pub(crate) fn empty() -> Self {
+    Self {
+      name: "".to_string(),
+      components: Vec::new(),
+    }
   }
 
-  pub(crate) fn prefix(&mut self, prefix: &str) {
+  pub(crate) fn into_string(self) -> String { self.name }
+
+  pub(crate) fn add_prefix(&mut self, prefix: &EntryName) {
     if prefix.is_empty() {
       return;
     }
-    let Self(name) = self;
-    *name = format!("{}/{}", prefix, name);
+    self.name = format!("{}/{}", prefix.name, self.name);
+    self.components = Self::split_indices(&self.name);
+  }
+
+  pub(crate) fn split_indices(s: &str) -> Vec<Range<usize>> {
+    let mut prev_begin: usize = 0;
+    let mut components: Vec<Range<usize>> = Vec::new();
+    for (match_start, matched_str) in s.match_indices('/') {
+      components.push(prev_begin..match_start);
+      prev_begin = match_start + matched_str.len();
+    }
+    components.push(prev_begin..s.len());
+    components
+  }
+
+  fn iter_components(&self, range: Range<usize>) -> impl Iterator<Item=&str> {
+    (&self.components[range])
+      .iter()
+      .map(|r| &self.name[r.clone()])
   }
 
   pub fn validate(name: String) -> Result<Self, MedusaNameFormatError> {
@@ -128,23 +147,19 @@ impl EntryName {
     } else if name.contains("//") {
       Err(MedusaNameFormatError::NameHasDoubleSlash(name.to_string()))
     } else {
-      Ok(Self(name))
+      let components = Self::split_indices(&name);
+      Ok(Self { name, components })
     }
   }
 
-  pub fn split_components(&self) -> Vec<&str> {
-    let Self(name) = self;
-    name.split('/').collect()
+  pub fn all_components(&self) -> impl Iterator<Item=&str> {
+    self.iter_components(0..self.components.len())
   }
 
-  pub(crate) fn directory_components(&self) -> Vec<&str> {
-    let mut dir_components = self.split_components();
-    /* Discard the file name itself. */
-    dir_components
-      .pop()
-      .expect("a split should always be non-empty");
+  fn components_vec(&self) -> Vec<&str> { self.all_components().collect() }
 
-    dir_components
+  pub(crate) fn parent_components(&self) -> impl Iterator<Item=&str> {
+    self.iter_components(0..self.components.len() - 1)
   }
 }
 
