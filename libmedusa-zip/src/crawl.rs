@@ -10,22 +10,28 @@
 //! ???
 
 use crate::{
-  EntryModifications, EntryName, FileSource, MedusaNameFormatError, MedusaZip, Parallelism,
-  ZipOutputOptions,
+  util::clap_handlers, EntryModifications, EntryName, FileSource, MedusaNameFormatError, MedusaZip,
+  Parallelism, ZipOutputOptions,
 };
 
 use async_recursion::async_recursion;
+use clap::{
+  builder::{TypedValueParser, ValueParserFactory},
+  Args,
+};
 use displaydoc::Display;
 use futures::{future::try_join_all, stream::StreamExt};
 use rayon::prelude::*;
-use regex::RegexSet;
+use regex::{Regex, RegexSet};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{fs, io};
 use tokio_stream::wrappers::ReadDirStream;
 
-use std::env;
-use std::path::{Path, PathBuf};
+use std::{
+  env, fmt,
+  path::{Path, PathBuf},
+};
 
 #[derive(Debug, Display, Error)]
 pub enum MedusaCrawlFormatError {
@@ -155,20 +161,76 @@ impl CrawlResult {
   }
 }
 
-struct Ignores {
+#[derive(Clone, Default, Debug)]
+pub struct Ignores {
   patterns: RegexSet,
 }
 
 impl Ignores {
-  pub fn new(patterns: RegexSet) -> Self {
-    Self { patterns }
-  }
+  pub fn new(patterns: RegexSet) -> Self { Self { patterns } }
 
   pub fn should_ignore(&self, path: &Path) -> bool {
     let Self { patterns } = self;
     let path_str = format!("{}", path.display());
     patterns.is_match(&path_str)
   }
+}
+
+impl fmt::Display for Ignores {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let Self { patterns } = self;
+    let quoted: Vec<String> = patterns
+      .patterns()
+      .iter()
+      .map(|s| format!("'{}'", s))
+      .collect();
+    let joined: String = quoted.join(", ");
+    write!(f, "[{}]", joined)
+  }
+}
+
+#[derive(Clone, Debug)]
+pub struct RegexWrapper(pub Regex);
+
+impl fmt::Display for RegexWrapper {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let Self(p) = self;
+    p.fmt(f)
+  }
+}
+
+#[derive(Clone)]
+pub struct RegexParser;
+
+impl TypedValueParser for RegexParser {
+  type Value = RegexWrapper;
+
+  fn parse_ref(
+    &self,
+    cmd: &clap::Command,
+    arg: Option<&clap::Arg>,
+    value: &std::ffi::OsStr,
+  ) -> Result<Self::Value, clap::Error> {
+    let inner = clap::builder::StringValueParser::new();
+    let val = inner.parse_ref(cmd, arg, value)?;
+
+    let regex = Regex::new(&val).map_err(|e| {
+      let mut err = clap_handlers::prepare_clap_error(cmd, arg, &val);
+      clap_handlers::process_clap_error(
+        &mut err,
+        e,
+        "Regular expressions are parsed using the rust regex crate. See https://docs.rs/regex/latest/regex/index.html#syntax for more details."
+      );
+      err
+    })?;
+    Ok(RegexWrapper(regex))
+  }
+}
+
+impl ValueParserFactory for RegexWrapper {
+  type Parser = RegexParser;
+
+  fn value_parser() -> Self::Parser { RegexParser }
 }
 
 #[derive(Debug)]
@@ -191,9 +253,10 @@ impl Entry {
     let ResolvedPath {
       unresolved_path, ..
     } = self.as_resolved_path();
-    /* NB: Because we are doing regex-based matching, we are intentionally not taking into account
-     * matching against any idea of filesystem structure. To this end, our "ignores" will not
-     * detect if a symlink leads to a path which itself is ignored, but only whether the path
+    /* NB: Because we are doing regex-based matching, we are intentionally not
+     * taking into account matching against any idea of filesystem structure.
+     * To this end, our "ignores" will not detect if a symlink leads to a
+     * path which itself is ignored, but only whether the path
      * before expanding any symlinks matches the regex pattern. */
     ignores.should_ignore(unresolved_path)
   }
@@ -267,19 +330,45 @@ impl Input {
   }
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, Args)]
+pub struct MedusaCrawlArgs {
+  #[arg()]
+  pub paths_to_crawl: Vec<PathBuf>,
+  #[arg(short, long, default_values_t = Vec::<RegexWrapper>::new())]
+  pub ignore_patterns: Vec<RegexWrapper>,
+}
+
+impl From<MedusaCrawlArgs> for MedusaCrawl {
+  fn from(x: MedusaCrawlArgs) -> Self {
+    let MedusaCrawlArgs {
+      paths_to_crawl,
+      ignore_patterns,
+    } = x;
+    let ignore_patterns = RegexSet::new(
+      ignore_patterns
+        .into_iter()
+        .map(|RegexWrapper(p)| p.as_str().to_string()),
+    )
+    .expect("constituent patterns were already validated");
+    Self {
+      paths_to_crawl,
+      ignores: Ignores::new(ignore_patterns),
+    }
+  }
+}
+
+#[derive(Clone, Debug)]
 pub struct MedusaCrawl {
   pub paths_to_crawl: Vec<PathBuf>,
-  pub ignore_patterns: RegexSet,
+  pub ignores: Ignores,
 }
 
 impl MedusaCrawl {
   pub async fn crawl_paths(self) -> Result<CrawlResult, MedusaCrawlError> {
     let Self {
       paths_to_crawl,
-      ignore_patterns,
+      ignores,
     } = self;
-    let ignores = Ignores::new(ignore_patterns);
 
     let results: Vec<CrawlResult> = try_join_all(
       paths_to_crawl

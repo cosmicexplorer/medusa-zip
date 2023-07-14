@@ -13,9 +13,7 @@
  * or correctness of the code. */
 // #![warn(missing_docs)]
 
-/* TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
- * pair of delimiters)
- * Note: run clippy with: rustup run nightly cargo-clippy! */
+/* Note: run clippy with: rustup run nightly cargo-clippy! */
 #![deny(unsafe_code)]
 /* Ensure any doctest warnings fails the doctest! */
 #![doc(test(attr(deny(warnings))))]
@@ -68,8 +66,8 @@ pub enum MedusaNameFormatError {
   NameHasDoubleSlash(String),
 }
 
-/* TODO: figure out how to make this represent both file and directory names without coughing up
- * blood. */
+/* TODO: figure out how to make this represent both file and directory names
+ * without coughing up blood. */
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EntryName {
   name: String,
@@ -188,7 +186,7 @@ mod destination;
 pub use destination::{DestinationBehavior, DestinationError};
 
 mod crawl;
-pub use crawl::{CrawlResult, MedusaCrawl, MedusaCrawlError};
+pub use crawl::{CrawlResult, MedusaCrawl, MedusaCrawlArgs, MedusaCrawlError};
 
 mod zip;
 pub use crate::zip::{
@@ -198,6 +196,8 @@ pub use crate::zip::{
 
 mod merge;
 pub use merge::{MedusaMerge, MedusaMergeError, MergeGroup};
+
+mod util;
 
 /* FIXME: add tests! */
 /* #[cfg(test)] */

@@ -11,7 +11,7 @@
 
 #[cfg(doc)]
 use crate::MergeGroup;
-use crate::{EntryName, FileSource, MedusaNameFormatError};
+use crate::{util::clap_handlers, EntryName, FileSource, MedusaNameFormatError};
 
 use cfg_if::cfg_if;
 use clap::{
@@ -198,31 +198,9 @@ impl TypedValueParser for ZipDateTimeParser {
     let inner = clap::builder::StringValueParser::new();
     let val = inner.parse_ref(cmd, arg, value)?;
 
-    use clap::error::{ContextKind, ContextValue, ErrorKind};
-
-    /* NB: These are the only way the default clap formatter will print out any
-     * additional context. It is ridiculously frustrating. */
-    fn process_error(err: &mut clap::Error, e: impl std::fmt::Display, msg: &str) {
-      err.insert(
-        ContextKind::Usage,
-        ContextValue::StyledStr(format!("Error: {}.", e).into()),
-      );
-      err.insert(
-        ContextKind::Suggested,
-        ContextValue::StyledStrs(vec![msg.to_string().into()]),
-      );
-    }
-
     let parsed_offset = OffsetDateTime::parse(&val, &Rfc3339).map_err(|e| {
-      let mut err = clap::Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
-      if let Some(arg) = arg {
-        err.insert(
-          ContextKind::InvalidArg,
-          ContextValue::String(arg.to_string()),
-        );
-      }
-      err.insert(ContextKind::InvalidValue, ContextValue::String(val.clone()));
-      process_error(
+      let mut err = clap_handlers::prepare_clap_error(cmd, arg, &val);
+      clap_handlers::process_clap_error(
         &mut err,
         e,
         "Provide a string which can be formatted according to RFC 3339, such as '1985-04-12T23:20:50.52Z'. See https://datatracker.ietf.org/doc/html/rfc3339#section-5.6 for details.",
@@ -230,15 +208,8 @@ impl TypedValueParser for ZipDateTimeParser {
       err
     })?;
     let zip_time: ZipDateTime = parsed_offset.try_into().map_err(|e| {
-      let mut err = clap::Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
-      if let Some(arg) = arg {
-        err.insert(
-          ContextKind::InvalidArg,
-          ContextValue::String(arg.to_string()),
-        );
-      }
-      err.insert(ContextKind::InvalidValue, ContextValue::String(val.clone()));
-      process_error(
+      let mut err = clap_handlers::prepare_clap_error(cmd, arg, &val);
+      clap_handlers::process_clap_error(
         &mut err,
         e,
         "The zip implementation used by this program only supports years from 1980-2107.",
@@ -263,9 +234,25 @@ pub struct ModifiedTimeBehavior {
     long,
     conflicts_with = "explicit_mtime_timestamp"
   )]
-  pub automatic_mtime_strategy: AutomaticModifiedTimeStrategy,
+  automatic_mtime_strategy: AutomaticModifiedTimeStrategy,
   #[arg(long, default_value = None)]
-  pub explicit_mtime_timestamp: Option<ZipDateTimeWrapper>,
+  explicit_mtime_timestamp: Option<ZipDateTimeWrapper>,
+}
+
+impl ModifiedTimeBehavior {
+  pub fn automatic(automatic_mtime_strategy: AutomaticModifiedTimeStrategy) -> Self {
+    Self {
+      automatic_mtime_strategy,
+      ..Default::default()
+    }
+  }
+
+  pub fn explicit(explicit_mtime_timestamp: ZipDateTime) -> Self {
+    Self {
+      explicit_mtime_timestamp: Some(ZipDateTimeWrapper(explicit_mtime_timestamp)),
+      ..Default::default()
+    }
+  }
 }
 
 impl DefaultInitializeZipOptions for ModifiedTimeBehavior {

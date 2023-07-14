@@ -14,9 +14,7 @@
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code. */
 #![warn(missing_docs)]
-/* TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
- * pair of delimiters)
- * Note: run clippy with: rustup run nightly cargo-clippy! */
+/* Note: run clippy with: rustup run nightly cargo-clippy! */
 #![deny(unsafe_code)]
 /* Ensure any doctest warnings fails the doctest! */
 #![doc(test(attr(deny(warnings))))]
@@ -53,7 +51,8 @@ use clap::Parser as _;
 mod cli {
   mod args {
     use libmedusa_zip::{
-      DestinationBehavior, EntryModifications, ModifiedTimeBehavior, Parallelism, ZipOutputOptions,
+      DestinationBehavior, EntryModifications, MedusaCrawlArgs, ModifiedTimeBehavior, Parallelism,
+      ZipOutputOptions,
     };
 
     use clap::{Args, Parser, Subcommand};
@@ -75,12 +74,8 @@ mod cli {
       /// Write a JSON object to stdout which contains all the file paths under
       /// the top-level `paths`.
       Crawl {
-        /// ???
-        #[arg()]
-        paths: Vec<PathBuf>,
-        /// File path regex patterns to ignore.
-        #[arg(short, long, default_values_t = Vec::<String>::new())]
-        ignores: Vec<String>,
+        #[command(flatten)]
+        crawl: MedusaCrawlArgs,
       },
       /// Consume a JSON object from [`Self::Crawl`] over stdin and write those
       /// files into a zip file at `output`.
@@ -124,7 +119,6 @@ mod cli {
     };
 
     use displaydoc::Display;
-    use regex::{self, RegexSet};
     use thiserror::Error;
     use tokio::io::{self, AsyncReadExt};
     use zip::write::ZipWriter;
@@ -157,8 +151,6 @@ mod cli {
       Json(#[from] serde_json::Error),
       /// error creating output zip file: {0}
       Destination(#[from] DestinationError),
-      /// error generating pattern from ignore regex: {0}
-      Regex(#[from] regex::Error),
     }
 
     impl Cli {
@@ -166,11 +158,8 @@ mod cli {
         let Self { command } = self;
 
         match command {
-          Command::Crawl { paths, ignores } => {
-            let crawl = MedusaCrawl {
-              paths_to_crawl: paths,
-              ignore_patterns: RegexSet::new(ignores)?,
-            };
+          Command::Crawl { crawl } => {
+            let crawl: MedusaCrawl = crawl.into();
             let crawl_result = crawl.crawl_paths().await?;
             let crawl_json = serde_json::to_string(&crawl_result)?;
 
