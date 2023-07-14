@@ -11,7 +11,8 @@
 
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code. */
-/* #![warn(missing_docs)] */
+// #![warn(missing_docs)]
+
 /* TODO: rustfmt breaks multiline comments when used one on top of another! (each with its own
  * pair of delimiters)
  * Note: run clippy with: rustup run nightly cargo-clippy! */
@@ -50,9 +51,7 @@ use displaydoc::Display;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use std::cmp;
-use std::fmt;
-use std::path::PathBuf;
+use std::{cmp, fmt, path::PathBuf};
 
 /// Allowed zip format quirks that we refuse to handle right now.
 #[derive(Debug, Display, Error)]
@@ -79,7 +78,8 @@ impl fmt::Display for EntryName {
   }
 }
 
-/* FIXME: cache the splitting by components instead of doing it upon every cmp! */
+/* FIXME: cache the splitting by components instead of doing it upon every
+ * cmp! */
 impl cmp::PartialOrd for EntryName {
   fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
     self
@@ -95,9 +95,7 @@ impl cmp::Ord for EntryName {
 }
 
 impl EntryName {
-  pub(crate) fn empty() -> Self {
-    Self("".to_string())
-  }
+  pub(crate) fn empty() -> Self { Self("".to_string()) }
 
   pub(crate) fn into_string(self) -> String {
     let Self(name) = self;
@@ -119,7 +117,8 @@ impl EntryName {
       /* We won't produce any non-relative paths. */
       Err(MedusaNameFormatError::NameStartsWithSlash(name.to_string()))
     } else if name.starts_with("./") {
-      /* We refuse to try to process ./ paths, asking the user to strip them instead. */
+      /* We refuse to try to process ./ paths, asking the user to strip them
+       * instead. */
       Err(MedusaNameFormatError::NameStartsWithDotSlash(
         name.to_string(),
       ))
@@ -166,9 +165,7 @@ impl cmp::PartialOrd for FileSource {
 }
 
 impl cmp::Ord for FileSource {
-  fn cmp(&self, other: &Self) -> cmp::Ordering {
-    self.name.cmp(&other.name)
-  }
+  fn cmp(&self, other: &Self) -> cmp::Ordering { self.name.cmp(&other.name) }
 }
 
 /* FIXME: make these modules public! */
@@ -180,7 +177,8 @@ pub use crawl::{CrawlResult, MedusaCrawl, MedusaCrawlError};
 
 mod zip;
 pub use crate::zip::{
-  EntryModifications, MedusaZip, MedusaZipError, Parallelism, ModifiedTimeBehavior, ZipOutputOptions,
+  EntryModifications, MedusaZip, MedusaZipError, ModifiedTimeBehavior, Parallelism,
+  ZipOutputOptions,
 };
 
 mod merge;
