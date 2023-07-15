@@ -197,7 +197,7 @@ pub use crate::zip::{
 };
 
 mod merge;
-pub use merge::{MedusaMerge, MedusaMergeError, MedusaMergeSpec, MergeGroup};
+pub use merge::{MedusaMerge, MedusaMergeError, MergeArgParseError, MergeGroup};
 
 mod util;
 

@@ -17,7 +17,6 @@ use crate::{
 use displaydoc::Display;
 use futures::stream::StreamExt;
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{fs, io, sync::mpsc, task};
 use tokio_stream::wrappers::ReceiverStream;
@@ -28,7 +27,6 @@ use zip::{
 };
 
 use std::{
-  convert::{TryFrom, TryInto},
   io::{Seek, Write},
   path::PathBuf,
   sync::Arc,
@@ -48,45 +46,14 @@ pub enum MedusaMergeError {
 
 #[derive(Debug, Clone)]
 pub struct MergeGroup {
-  pub prefix: Option<EntryName>,
+  pub prefix: EntryName,
   pub sources: Vec<PathBuf>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MergeGroupArg {
-  pub prefix: Option<String>,
-  pub sources: Vec<PathBuf>,
-}
-
-impl TryFrom<MergeGroupArg> for MergeGroup {
-  type Error = MedusaNameFormatError;
-
-  fn try_from(x: MergeGroupArg) -> Result<Self, Self::Error> {
-    let MergeGroupArg { prefix, sources } = x;
-    let prefix = match prefix {
-      None => None,
-      Some(prefix) => Some(EntryName::validate(prefix)?),
-    };
-    Ok(Self { prefix, sources })
-  }
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct MedusaMergeSpec {
-  pub groups: Vec<MergeGroupArg>,
-}
-
-impl TryFrom<MedusaMergeSpec> for MedusaMerge {
-  type Error = MedusaNameFormatError;
-
-  fn try_from(x: MedusaMergeSpec) -> Result<Self, Self::Error> {
-    let MedusaMergeSpec { groups } = x;
-    let groups: Vec<MergeGroup> = groups
-      .into_iter()
-      .map(|g| g.try_into())
-      .collect::<Result<Vec<MergeGroup>, MedusaNameFormatError>>()?;
-    Ok(Self { groups })
-  }
+#[derive(Debug, Display, Error)]
+pub enum MergeArgParseError {
+  /// name formate error in entry: {0}
+  NameFormat(#[from] MedusaNameFormatError),
 }
 
 /* TODO: make this parse from clap CLI options, not json! */
@@ -103,6 +70,49 @@ pub enum IntermediateMergeEntry {
 const PARALLEL_MERGE_ENTRIES: usize = 10;
 
 impl MedusaMerge {
+  pub fn parse_from_args<R: AsRef<str>>(
+    args: impl Iterator<Item=R>,
+  ) -> Result<Self, MergeArgParseError> {
+    let mut ret: Vec<MergeGroup> = Vec::new();
+    let mut current_prefix: Option<EntryName> = None;
+    let mut current_sources: Vec<PathBuf> = Vec::new();
+    for arg in args {
+      let arg: &str = arg.as_ref();
+      /* If we are starting a new prefix: */
+      if arg.starts_with('+') && arg.ends_with('/') {
+        let new_prefix = &arg[1..arg.len() - 1];
+        let new_prefix = if new_prefix.is_empty() {
+          EntryName::empty()
+        } else {
+          EntryName::validate(new_prefix.to_string())?
+        };
+        /* Only None on the very first iteration of the loop. */
+        if let Some(prefix) = current_prefix.take() {
+          let group = MergeGroup {
+            prefix,
+            sources: current_sources.drain(..).collect(),
+          };
+          ret.push(group);
+        } else {
+          assert!(current_sources.is_empty());
+        }
+        current_prefix = Some(new_prefix);
+      } else {
+        /* If no prefixes have been declared, assume they begin with an empty prefix. */
+        current_prefix.get_or_insert_with(EntryName::empty);
+        current_sources.push(PathBuf::from(arg));
+      }
+    }
+    if let Some(prefix) = current_prefix {
+      let group = MergeGroup {
+        prefix,
+        sources: current_sources,
+      };
+      ret.push(group);
+    }
+    Ok(Self { groups: ret })
+  }
+
   pub async fn merge<Output>(
     self,
     mtime_behavior: ModifiedTimeBehavior,
@@ -120,12 +130,9 @@ impl MedusaMerge {
       let mut previous_directory_components: Vec<String> = Vec::new();
       for MergeGroup { prefix, sources } in groups.into_iter() {
         let current_directory_components: Vec<String> = prefix
-          .map(|e| {
-            e.all_components()
-              .map(|s| s.to_string())
-              .collect::<Vec<_>>()
-          })
-          .unwrap_or_default();
+          .all_components()
+          .map(|s| s.to_string())
+          .collect::<Vec<_>>();
         for new_rightmost_components in calculate_new_rightmost_components(
           &previous_directory_components,
           &current_directory_components,

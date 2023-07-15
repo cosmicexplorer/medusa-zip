@@ -42,7 +42,8 @@ pub enum DestinationBehavior {
   OptimisticallyAppend,
   /// Open the file in append mode, but don't try to read any zip info from it.
   ///
-  /// This is useful for creating e.g. PEX files or other self-executing zips with a shebang line.
+  /// This is useful for creating e.g. PEX files or other self-executing zips
+  /// with a shebang line.
   AppendToNonZip,
 }
 
@@ -95,11 +96,12 @@ impl DestinationBehavior {
           .read(true)
           .open(path)
           .await?;
-        /* NB: do NOT!!! open the file for append!!! It will only BREAK EVERYTHING IN MYSTERIOUS
-         * WAYS by constantly moving the seek cursor! Opening with ::new_append() will seek to the
-         * end for us, but in this case we want to write to a file that *doesn't* already have zip
-         * data, so we need to tell the file handle to go to the end before giving it to the zip
-         * library. */
+        /* NB: do NOT!!! open the file for append!!! It will only BREAK EVERYTHING IN
+         * MYSTERIOUS WAYS by constantly moving the seek cursor! Opening with
+         * ::new_append() will seek to the end for us, but in this case we
+         * want to write to a file that *doesn't* already have zip
+         * data, so we need to tell the file handle to go to the end before giving it
+         * to the zip library. */
         f.seek(io::SeekFrom::End(0)).await?;
         (f, false)
       },

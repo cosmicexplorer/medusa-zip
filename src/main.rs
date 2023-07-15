@@ -96,6 +96,8 @@ mod cli {
         output: Output,
         #[command(flatten)]
         mtime_behavior: ModifiedTimeBehavior,
+        #[arg()]
+        source_zips_by_prefix: Vec<String>,
       },
     }
 
@@ -117,7 +119,7 @@ mod cli {
 
     use libmedusa_zip::{
       CrawlResult, DestinationError, LockFileError, MedusaCrawl, MedusaCrawlError, MedusaMerge,
-      MedusaMergeError, MedusaMergeSpec, MedusaNameFormatError, MedusaZipError,
+      MedusaMergeError, MedusaNameFormatError, MedusaZipError, MergeArgParseError,
     };
 
     use displaydoc::Display;
@@ -126,8 +128,6 @@ mod cli {
     use zip::write::ZipWriter;
 
     use serde_json;
-
-    use std::convert::TryInto;
 
     impl Output {
       pub async fn initialize(self) -> Result<ZipWriter<std::fs::File>, DestinationError> {
@@ -157,6 +157,8 @@ mod cli {
       Destination(#[from] DestinationError),
       /// error locking file: {0}
       LockFile(#[from] LockFileError),
+      /// error parsing merge arguments: {0}
+      MergeArg(#[from] MergeArgParseError),
     }
 
     impl Cli {
@@ -201,16 +203,12 @@ mod cli {
           Command::Merge {
             output,
             mtime_behavior,
+            source_zips_by_prefix,
           } => {
             /* Initialize output stream. */
             let output_zip = output.initialize().await?;
 
-            /* Read json serialization from stdin. */
-            let mut input_json: Vec<u8> = Vec::new();
-            io::stdin().read_to_end(&mut input_json).await?;
-            let merge_spec: MedusaMergeSpec = serde_json::from_slice(&input_json)?;
-            let merge_spec: MedusaMerge = merge_spec.try_into()?;
-
+            let merge_spec = MedusaMerge::parse_from_args(source_zips_by_prefix.iter())?;
             /* Copy over constituent zips into current. */
             /* TODO: log the file output! */
             let _output_file_handle = merge_spec.merge(mtime_behavior, output_zip).await?;
