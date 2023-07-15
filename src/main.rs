@@ -51,8 +51,8 @@ use clap::Parser as _;
 mod cli {
   mod args {
     use libmedusa_zip::{
-      DestinationBehavior, EntryModifications, LockFileSpec, MedusaCrawlArgs, ModifiedTimeBehavior,
-      Parallelism, ZipOutputOptions,
+      DestinationBehavior, EntryModifications, MedusaCrawlArgs, ModifiedTimeBehavior, Parallelism,
+      ZipOutputOptions,
     };
 
     use clap::{Args, Parser, Subcommand};
@@ -87,7 +87,7 @@ mod cli {
         #[command(flatten)]
         modifications: EntryModifications,
         /// ???
-        #[arg(short, long, value_enum, default_value_t)]
+        #[arg(long, value_enum, default_value_t)]
         parallelism: Parallelism,
       },
       /// Merge the content of several zip files into one.
@@ -112,11 +112,11 @@ mod cli {
         #[command(flatten)]
         modifications: EntryModifications,
         /// ???
-        #[arg(short, long, value_enum, default_value_t)]
+        #[arg(long, value_enum, default_value_t)]
         parallelism: Parallelism,
       },
-      /// Perform a `zip` and then a `merge` without releasing the lockfile or
-      /// the output file handle.
+      /// Perform a `zip` and then a `merge` without releasing the output file
+      /// handle.
       ZipMerge {
         #[command(flatten)]
         output: Output,
@@ -125,7 +125,7 @@ mod cli {
         #[command(flatten)]
         modifications: EntryModifications,
         /// ???
-        #[arg(short, long, value_enum, default_value_t)]
+        #[arg(long, value_enum, default_value_t)]
         parallelism: Parallelism,
         #[arg()]
         source_zips_by_prefix: Vec<String>,
@@ -142,7 +142,7 @@ mod cli {
         #[command(flatten)]
         modifications: EntryModifications,
         /// ???
-        #[arg(short, long, value_enum, default_value_t)]
+        #[arg(long, value_enum, default_value_t)]
         parallelism: Parallelism,
         #[arg()]
         source_zips_by_prefix: Vec<String>,
@@ -156,8 +156,6 @@ mod cli {
     pub struct Cli {
       #[command(subcommand)]
       pub command: Command,
-      #[command(flatten)]
-      pub lock_file: LockFileSpec,
     }
   }
   pub use args::{Cli, Command, Output};
@@ -166,8 +164,8 @@ mod cli {
     use super::{Cli, Command, Output};
 
     use libmedusa_zip::{
-      CrawlResult, DestinationError, LockFileError, MedusaCrawl, MedusaCrawlError, MedusaMerge,
-      MedusaMergeError, MedusaNameFormatError, MedusaZipError, MergeArgParseError,
+      CrawlResult, DestinationError, MedusaCrawl, MedusaCrawlError, MedusaMerge, MedusaMergeError,
+      MedusaNameFormatError, MedusaZipError, MergeArgParseError,
     };
 
     use displaydoc::Display;
@@ -178,7 +176,10 @@ mod cli {
     use serde_json;
 
     impl Output {
-      pub async fn initialize(self) -> Result<ZipWriter<std::fs::File>, DestinationError> {
+      pub async fn initialize(
+        self,
+        /* ) -> Result<Result<ZipWriter<std::fs::File>, EarlyReturn>, DestinationError> { */
+      ) -> Result<ZipWriter<std::fs::File>, DestinationError> {
         let Self {
           output,
           destination_behavior,
@@ -203,8 +204,6 @@ mod cli {
       Json(#[from] serde_json::Error),
       /// error creating output zip file: {0}
       Destination(#[from] DestinationError),
-      /// error locking file: {0}
-      LockFile(#[from] LockFileError),
       /// error parsing merge arguments: {0}
       MergeArg(#[from] MergeArgParseError),
       /// error in zip operation: {0}
@@ -213,12 +212,7 @@ mod cli {
 
     impl Cli {
       pub async fn run(self) -> Result<(), MedusaCliError> {
-        let Self { command, lock_file } = self;
-
-        /* This drops it at the end of scope, as opposed to simply `let _ =`.
-         * See
-         * https://doc.rust-lang.org/stable/nightly-rustc/rustc_lint/let_underscore/static.LET_UNDERSCORE_DROP.html. */
-        let _maybe_lock_file = lock_file.lock_if_we_were_given_a_path().await?;
+        let Self { command } = self;
 
         match command {
           Command::Crawl { crawl } => {

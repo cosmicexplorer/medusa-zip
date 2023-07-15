@@ -47,6 +47,8 @@ pub enum DestinationBehavior {
   AppendToNonZip,
 }
 
+/* Make it always go to a tempfile, then atomically move at the end! Unless
+ * it already exists! */
 impl DestinationBehavior {
   pub async fn initialize(self, path: &Path) -> Result<ZipWriter<std::fs::File>, DestinationError> {
     let (file, with_append) = match self {
@@ -106,6 +108,8 @@ impl DestinationBehavior {
         (f, false)
       },
     };
+    /* FIXME: remove all the unnecessary tokio::fs::File usage that requires
+     * calling .into_std() in case it's slow! */
     let file = file.into_std().await;
 
     let writer = task::spawn_blocking(move || {

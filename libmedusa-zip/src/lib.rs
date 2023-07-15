@@ -184,9 +184,6 @@ impl cmp::Ord for FileSource {
 mod destination;
 pub use destination::{DestinationBehavior, DestinationError};
 
-mod lock_file;
-pub use lock_file::{LockFile, LockFileError, LockFileSpec};
-
 mod crawl;
 pub use crawl::{CrawlResult, MedusaCrawl, MedusaCrawlArgs, MedusaCrawlError};
 

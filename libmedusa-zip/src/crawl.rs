@@ -332,8 +332,13 @@ impl Input {
 
 #[derive(Clone, Debug, Default, Args)]
 pub struct MedusaCrawlArgs {
-  #[arg()]
-  pub paths_to_crawl: Vec<PathBuf>,
+  /// File, directory, or symlink paths to traverse.
+  #[arg(short, long, default_values_t = vec![".".to_string()])]
+  pub paths_to_crawl: Vec<String>,
+  /// Regular expressions to filter out of any directory or file paths
+  /// encountered when crawling.
+  ///
+  /// These patterns will not read through symlinks.
   #[arg(short, long, default_values_t = Vec::<RegexWrapper>::new())]
   pub ignore_patterns: Vec<RegexWrapper>,
 }
@@ -351,7 +356,7 @@ impl From<MedusaCrawlArgs> for MedusaCrawl {
     )
     .expect("constituent patterns were already validated");
     Self {
-      paths_to_crawl,
+      paths_to_crawl: paths_to_crawl.into_iter().map(PathBuf::from).collect(),
       ignores: Ignores::new(ignore_patterns),
     }
   }
