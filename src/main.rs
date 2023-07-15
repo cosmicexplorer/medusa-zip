@@ -94,8 +94,56 @@ mod cli {
       Merge {
         #[command(flatten)]
         output: Output,
+        /// ???
         #[command(flatten)]
         mtime_behavior: ModifiedTimeBehavior,
+        /// ???
+        #[arg()]
+        source_zips_by_prefix: Vec<String>,
+      },
+      /// Perform a `crawl` and then a `zip` on its output in memory.
+      CrawlZip {
+        #[command(flatten)]
+        crawl: MedusaCrawlArgs,
+        #[command(flatten)]
+        output: Output,
+        #[command(flatten)]
+        zip_options: ZipOutputOptions,
+        #[command(flatten)]
+        modifications: EntryModifications,
+        /// ???
+        #[arg(short, long, value_enum, default_value_t)]
+        parallelism: Parallelism,
+      },
+      /// Perform a `zip` and then a `merge` without releasing the lockfile or
+      /// the output file handle.
+      ZipMerge {
+        #[command(flatten)]
+        output: Output,
+        #[command(flatten)]
+        zip_options: ZipOutputOptions,
+        #[command(flatten)]
+        modifications: EntryModifications,
+        /// ???
+        #[arg(short, long, value_enum, default_value_t)]
+        parallelism: Parallelism,
+        #[arg()]
+        source_zips_by_prefix: Vec<String>,
+      },
+      /// Perform `crawl`, then a `zip` on its output in memory, then a `merge`
+      /// into the same output file.
+      CrawlZipMerge {
+        #[command(flatten)]
+        crawl: MedusaCrawlArgs,
+        #[command(flatten)]
+        output: Output,
+        #[command(flatten)]
+        zip_options: ZipOutputOptions,
+        #[command(flatten)]
+        modifications: EntryModifications,
+        /// ???
+        #[arg(short, long, value_enum, default_value_t)]
+        parallelism: Parallelism,
         #[arg()]
         source_zips_by_prefix: Vec<String>,
       },
@@ -104,7 +152,7 @@ mod cli {
     /// crawl file paths and produce zip files with some level of i/o and
     /// compute parallelism.
     #[derive(Parser, Debug)]
-    #[command(author, version, about, long_about = None)]
+    #[command(author, version, about, long_about = None, verbatim_doc_comment)]
     pub struct Cli {
       #[command(subcommand)]
       pub command: Command,
@@ -125,7 +173,7 @@ mod cli {
     use displaydoc::Display;
     use thiserror::Error;
     use tokio::io::{self, AsyncReadExt};
-    use zip::write::ZipWriter;
+    use zip::{result::ZipError, write::ZipWriter};
 
     use serde_json;
 
@@ -159,6 +207,8 @@ mod cli {
       LockFile(#[from] LockFileError),
       /// error parsing merge arguments: {0}
       MergeArg(#[from] MergeArgParseError),
+      /// error in zip operation: {0}
+      Zip(#[from] ZipError),
     }
 
     impl Cli {
@@ -213,6 +263,89 @@ mod cli {
             /* TODO: log the file output! */
             let _output_file_handle = merge_spec.merge(mtime_behavior, output_zip).await?;
           },
+          Command::CrawlZip {
+            crawl,
+            output,
+            zip_options,
+            modifications,
+            parallelism,
+          } => {
+            /* Initialize output stream. */
+            let output_zip = output.initialize().await?;
+
+            let crawl: MedusaCrawl = crawl.into();
+            let crawl_result = crawl.crawl_paths().await?;
+
+            /* Apply options from command line to produce a zip spec. */
+            let crawled_zip = crawl_result.medusa_zip(zip_options, modifications, parallelism)?;
+
+            /* Do the parallel zip!!! */
+            /* TODO: log the file output! */
+            let _output_file_handle = crawled_zip.zip(output_zip).await?;
+          },
+          Command::ZipMerge {
+            output,
+            zip_options,
+            modifications,
+            parallelism,
+            source_zips_by_prefix,
+          } => {
+            /* Initialize output stream. */
+            let output_zip = output.initialize().await?;
+
+            /* Read json serialization from stdin. */
+            let mut input_json: Vec<u8> = Vec::new();
+            io::stdin().read_to_end(&mut input_json).await?;
+            let crawl_result: CrawlResult = serde_json::from_slice(&input_json)?;
+
+            /* Apply options from command line to produce a zip spec. */
+            let crawled_zip = crawl_result.medusa_zip(zip_options, modifications, parallelism)?;
+
+            /* Do the parallel zip!!! */
+            let output_zip_file_handle = crawled_zip.zip(output_zip).await?;
+
+            /* TODO: we could avoid deserializing the central directory record here,
+             * maybe. */
+            let same_output_zip = ZipWriter::new_append(output_zip_file_handle)?;
+
+            let merge_spec = MedusaMerge::parse_from_args(source_zips_by_prefix.iter())?;
+            /* Copy over constituent zips into current. */
+            /* TODO: log the file output! */
+            let _output_file_handle = merge_spec
+              .merge(zip_options.mtime_behavior, same_output_zip)
+              .await?;
+          },
+          Command::CrawlZipMerge {
+            crawl,
+            output,
+            zip_options,
+            modifications,
+            parallelism,
+            source_zips_by_prefix,
+          } => {
+            /* Initialize output stream. */
+            let output_zip = output.initialize().await?;
+
+            let crawl: MedusaCrawl = crawl.into();
+            let crawl_result = crawl.crawl_paths().await?;
+
+            /* Apply options from command line to produce a zip spec. */
+            let crawled_zip = crawl_result.medusa_zip(zip_options, modifications, parallelism)?;
+
+            /* Do the parallel zip!!! */
+            let output_zip_file_handle = crawled_zip.zip(output_zip).await?;
+
+            /* TODO: we could avoid deserializing the central directory record here,
+             * maybe. */
+            let same_output_zip = ZipWriter::new_append(output_zip_file_handle)?;
+
+            let merge_spec = MedusaMerge::parse_from_args(source_zips_by_prefix.iter())?;
+            /* Copy over constituent zips into current. */
+            /* TODO: log the file output! */
+            let _output_file_handle = merge_spec
+              .merge(zip_options.mtime_behavior, same_output_zip)
+              .await?;
+          },
         }
 
         Ok(())
@@ -223,10 +356,6 @@ mod cli {
 
 #[tokio::main]
 async fn main() {
-  let cli = match cli::Cli::try_parse() {
-    Ok(cli) => cli,
-    Err(e) => e.exit(),
-  };
-
+  let cli = cli::Cli::parse();
   cli.run().await.expect("top-level error");
 }

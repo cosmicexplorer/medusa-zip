@@ -95,11 +95,11 @@ pub trait InitializeZipOptionsForSpecificFile {
 
 #[derive(Copy, Clone, Default, Debug, ValueEnum)]
 pub enum AutomaticModifiedTimeStrategy {
-  /// All modification times for entries will be set to 1980-01-1.
+  /// All modification times for entries will be set to 1980-01-1 at 00:00:00.
   #[default]
   Reproducible,
-  /// All modification times for entries will be set to the same timestamp
-  /// recorded when the output zip is created.
+  /// All modification times for entries will be set to a single timestamp,
+  /// recorded at the beginning of the program's runtime.
   CurrentTime,
   /// Each file's modification time on disk will be converted into a zip
   /// timestamp when it is entered into the archive.
@@ -228,6 +228,8 @@ impl ValueParserFactory for ZipDateTimeWrapper {
 
 #[derive(Copy, Clone, Debug, Default, Args)]
 pub struct ModifiedTimeBehavior {
+  /// Assign timestamps to the entries of the output zip file according to some
+  /// formula.
   #[arg(
     value_enum,
     default_value_t,
@@ -235,6 +237,14 @@ pub struct ModifiedTimeBehavior {
     conflicts_with = "explicit_mtime_timestamp"
   )]
   automatic_mtime_strategy: AutomaticModifiedTimeStrategy,
+  /// Assign a single [RFC 3339] timestamp such as '1985-04-12T23:20:50.52Z' to
+  /// every file and directory.
+  ///
+  /// Because zip files do not retain time zone information, we must provide UTC
+  /// offsets whenever we interact with them. The timestamps will also be
+  /// truncated to 2-second accuracy.
+  ///
+  /// [RFC 3339]: https://datatracker.ietf.org/doc/html/rfc3339#section-5.6
   #[arg(long, default_value = None)]
   explicit_mtime_timestamp: Option<ZipDateTimeWrapper>,
 }
@@ -354,8 +364,6 @@ pub enum CompressionMethod {
   Deflated,
   /// bzip2-compressed
   Bzip2,
-  /// aes-encrypted (uncompressed)
-  Aes,
   /// zstd-compressed
   Zstd,
 }
@@ -364,7 +372,15 @@ pub enum CompressionMethod {
 pub struct CompressionOptions {
   #[arg(value_enum, default_value_t, long)]
   pub compression_method: CompressionMethod,
-  #[arg(long, default_value = None, requires = "compression_method")]
+  /// The degree of computational effort to exert for the [`Self::compression_method`].
+  ///
+  /// Each compression method interprets this argument differently:
+  /// - [`CompressionMethod::Stored`]: the program will error if this is provided.
+  /// - [`CompressionMethod::Deflated`]: 0..=9 (default 6)
+  /// - [`CompressionMethod::Bzip2`]: 0..=9 (default 6)
+  /// - [`CompressionMethod::Zstd`]: -7..=22 (default 3)
+  ///   - 0 is also mapped to "default".
+  #[arg(long, default_value = None, requires = "compression_method", verbatim_doc_comment)]
   pub compression_level: Option<i8>,
 }
 
@@ -374,8 +390,6 @@ pub enum ParseCompressionOptionsError {
   CompressionLevelWithStored(i8),
   /// compression level {1} was invalid for method {0} which accepts {2:?}
   InvalidCompressionLevel(CompressionMethod, i8, ops::RangeInclusive<i8>),
-  /// AES encryption does not accept any compression level (was: {0})
-  CompressionLevelWithAes(i8),
   /// error converting from int (this should never happen!): {0}
   TryFromInt(#[from] num::TryFromIntError),
 }
@@ -384,7 +398,6 @@ enum CompressionStrategy {
   Stored,
   Deflated(Option<u8>),
   Bzip2(Option<u8>),
-  Aes,
   Zstd(Option<i8>),
 }
 
@@ -433,10 +446,6 @@ impl CompressionStrategy {
           }
         },
       },
-      CompressionMethod::Aes => match compression_level {
-        None => Ok(Self::Aes),
-        Some(level) => Err(ParseCompressionOptionsError::CompressionLevelWithAes(level)),
-      },
       CompressionMethod::Zstd => match compression_level {
         None => Ok(Self::Zstd(None)),
         Some(level) => {
@@ -474,7 +483,6 @@ impl DefaultInitializeZipOptions for CompressionStrategy {
             .expect("these values have already been checked")
         }),
       ),
-      Self::Aes => (ZipCompressionMethod::Aes, None),
       Self::Zstd(level) => (ZipCompressionMethod::Zstd, *level),
     };
     options
@@ -749,7 +757,7 @@ pub enum Parallelism {
   /// Read source files and copy them to the output zip in order.
   #[default]
   Synchronous,
-  /// Parallelize creation by splitting up the input into chunks;
+  /// Parallelize creation by splitting up the input into chunks.
   ParallelMerge,
 }
 
