@@ -86,7 +86,6 @@ mod cli {
         zip_options: ZipOutputOptions,
         #[command(flatten)]
         modifications: EntryModifications,
-        /// ???
         #[arg(long, value_enum, default_value_t)]
         parallelism: Parallelism,
       },
@@ -111,7 +110,6 @@ mod cli {
         zip_options: ZipOutputOptions,
         #[command(flatten)]
         modifications: EntryModifications,
-        /// ???
         #[arg(long, value_enum, default_value_t)]
         parallelism: Parallelism,
       },
@@ -124,7 +122,6 @@ mod cli {
         zip_options: ZipOutputOptions,
         #[command(flatten)]
         modifications: EntryModifications,
-        /// ???
         #[arg(long, value_enum, default_value_t)]
         parallelism: Parallelism,
         #[arg()]
@@ -141,7 +138,6 @@ mod cli {
         zip_options: ZipOutputOptions,
         #[command(flatten)]
         modifications: EntryModifications,
-        /// ???
         #[arg(long, value_enum, default_value_t)]
         parallelism: Parallelism,
         #[arg()]
@@ -176,10 +172,7 @@ mod cli {
     use serde_json;
 
     impl Output {
-      pub async fn initialize(
-        self,
-        /* ) -> Result<Result<ZipWriter<std::fs::File>, EarlyReturn>, DestinationError> { */
-      ) -> Result<ZipWriter<std::fs::File>, DestinationError> {
+      pub async fn initialize(self) -> Result<ZipWriter<std::fs::File>, DestinationError> {
         let Self {
           output,
           destination_behavior,

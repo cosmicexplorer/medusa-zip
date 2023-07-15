@@ -370,12 +370,18 @@ pub enum CompressionMethod {
 
 #[derive(Copy, Clone, Default, Debug, Args)]
 pub struct CompressionOptions {
+  /// This method is a default set for the entire file.
+  ///
+  /// The [`zip`] library will internally set compression to [`CompressionMethod::Stored`] for
+  /// extremely small directory entries regardless of this setting as an optimization.
   #[arg(value_enum, default_value_t, long)]
   pub compression_method: CompressionMethod,
-  /// The degree of computational effort to exert for the [`Self::compression_method`].
+  /// The degree of computational effort to exert for the
+  /// [`Self::compression_method`].
   ///
   /// Each compression method interprets this argument differently:
-  /// - [`CompressionMethod::Stored`]: the program will error if this is provided.
+  /// - [`CompressionMethod::Stored`]: the program will error if this is
+  ///   provided.
   /// - [`CompressionMethod::Deflated`]: 0..=9 (default 6)
   /// - [`CompressionMethod::Bzip2`]: 0..=9 (default 6)
   /// - [`CompressionMethod::Zstd`]: -7..=22 (default 3)
@@ -504,8 +510,18 @@ pub struct ZipOutputOptions {
 
 #[derive(Clone, Default, Debug, Args)]
 pub struct EntryModifications {
+  /// This prefixes a directory path to every entry without creating any of its
+  /// parent directories.
+  ///
+  /// These prefixes always come before any prefixes introduced by [`Self::own_prefix`].
+  ///
+  /// `--silent-external-prefix .deps` => `[.deps/a, .deps/b, ...]`
   #[arg(long, default_value = None)]
   pub silent_external_prefix: Option<String>,
+  /// This prefixes a directory path to every entry, but this *will* create
+  /// parent directory entries in the output file.
+  ///
+  /// `--own-prefix .deps` => `[.deps/, .deps/a, .deps/b, ...]`
   #[arg(long, default_value = None)]
   pub own_prefix: Option<String>,
 }
@@ -757,7 +773,7 @@ pub enum Parallelism {
   /// Read source files and copy them to the output zip in order.
   #[default]
   Synchronous,
-  /// Parallelize creation by splitting up the input into chunks.
+  /// `[EXPERIMENTAL]` Parallelize creation by splitting up the input into chunks.
   ParallelMerge,
 }
 
