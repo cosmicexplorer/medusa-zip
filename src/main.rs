@@ -51,8 +51,8 @@ use clap::Parser as _;
 mod cli {
   mod args {
     use libmedusa_zip::{
-      DestinationBehavior, EntryModifications, MedusaCrawlArgs, ModifiedTimeBehavior, Parallelism,
-      ZipOutputOptions,
+      DestinationBehavior, EntryModifications, LockFileSpec, MedusaCrawlArgs, ModifiedTimeBehavior,
+      Parallelism, ZipOutputOptions,
     };
 
     use clap::{Args, Parser, Subcommand};
@@ -106,6 +106,8 @@ mod cli {
     pub struct Cli {
       #[command(subcommand)]
       pub command: Command,
+      #[command(flatten)]
+      pub lock_file: LockFileSpec,
     }
   }
   pub use args::{Cli, Command, Output};
@@ -114,8 +116,8 @@ mod cli {
     use super::{Cli, Command, Output};
 
     use libmedusa_zip::{
-      CrawlResult, DestinationError, MedusaCrawl, MedusaCrawlError, MedusaMerge, MedusaMergeError,
-      MedusaMergeSpec, MedusaNameFormatError, MedusaZipError,
+      CrawlResult, DestinationError, LockFileError, MedusaCrawl, MedusaCrawlError, MedusaMerge,
+      MedusaMergeError, MedusaMergeSpec, MedusaNameFormatError, MedusaZipError,
     };
 
     use displaydoc::Display;
@@ -153,11 +155,18 @@ mod cli {
       Json(#[from] serde_json::Error),
       /// error creating output zip file: {0}
       Destination(#[from] DestinationError),
+      /// error locking file: {0}
+      LockFile(#[from] LockFileError),
     }
 
     impl Cli {
       pub async fn run(self) -> Result<(), MedusaCliError> {
-        let Self { command } = self;
+        let Self { command, lock_file } = self;
+
+        /* This drops it at the end of scope, as opposed to simply `let _ =`.
+         * See
+         * https://doc.rust-lang.org/stable/nightly-rustc/rustc_lint/let_underscore/static.LET_UNDERSCORE_DROP.html. */
+        let _maybe_lock_file = lock_file.lock_if_we_were_given_a_path().await?;
 
         match command {
           Command::Crawl { crawl } => {
