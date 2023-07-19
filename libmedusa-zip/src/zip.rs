@@ -786,11 +786,8 @@ pub struct MedusaZip {
   pub parallelism: Parallelism,
 }
 
-/* FIXME: make the later zips have more files than the earlier ones, so they
- * can take longer to complete (need to fully pipeline to make this useful)! */
-const INTERMEDIATE_ZIP_THREADS: usize = 20;
-
 /* TODO: make these configurable!!! */
+const INTERMEDIATE_ZIP_THREADS: usize = 20;
 const PARALLEL_ENTRIES: usize = 20;
 
 pub struct ZipOptionsInitializers {

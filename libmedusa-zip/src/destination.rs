@@ -47,8 +47,6 @@ pub enum DestinationBehavior {
   AppendToNonZip,
 }
 
-/* TODO: Make it always go to a tempfile, then atomically move at the end!
- * Unless it already exists! */
 impl DestinationBehavior {
   pub async fn initialize(self, path: &Path) -> Result<ZipWriter<std::fs::File>, DestinationError> {
     let (file, with_append) = match self {

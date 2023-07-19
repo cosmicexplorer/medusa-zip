@@ -56,7 +56,6 @@ pub enum MergeArgParseError {
   NameFormat(#[from] MedusaNameFormatError),
 }
 
-/* TODO: make this parse from clap CLI options, not json! */
 #[derive(Default, Debug, Clone)]
 pub struct MedusaMerge {
   pub groups: Vec<MergeGroup>,
