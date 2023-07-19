@@ -773,10 +773,9 @@ impl IntermediateSingleEntry {
 #[derive(Copy, Clone, Default, Debug, ValueEnum)]
 pub enum Parallelism {
   /// Read source files and copy them to the output zip in order.
-  #[default]
   Synchronous,
-  /// `[EXPERIMENTAL]` Parallelize creation by splitting up the input into
-  /// chunks.
+  /// Parallelize creation by splitting up the input into chunks.
+  #[default]
   ParallelMerge,
 }
 
