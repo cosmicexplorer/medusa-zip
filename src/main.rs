@@ -46,8 +46,6 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-use clap::Parser as _;
-
 mod cli {
   mod args {
     use libmedusa_zip::{
@@ -159,52 +157,24 @@ mod cli {
   mod run {
     use super::{Cli, Command, Output};
 
-    use libmedusa_zip::{
-      CrawlResult, DestinationError, MedusaCrawl, MedusaCrawlError, MedusaMerge, MedusaMergeError,
-      MedusaNameFormatError, MedusaZipError, MergeArgParseError,
-    };
-
-    use displaydoc::Display;
-    use thiserror::Error;
-    use tokio::io::{self, AsyncReadExt};
-    use zip::{result::ZipError, write::ZipWriter};
+    use libmedusa_zip::{CrawlResult, MedusaCrawl, MedusaMerge};
 
     use serde_json;
+    use tokio::io::{self, AsyncReadExt};
+    use zip::write::ZipWriter;
 
     impl Output {
-      pub async fn initialize(self) -> Result<ZipWriter<std::fs::File>, DestinationError> {
+      pub async fn initialize(self) -> eyre::Result<ZipWriter<std::fs::File>> {
         let Self {
           output,
           destination_behavior,
         } = self;
-        destination_behavior.initialize(&output).await
+        Ok(destination_behavior.initialize(&output).await?)
       }
     }
 
-    #[derive(Debug, Display, Error)]
-    pub enum MedusaCliError {
-      /// error performing parallel zip: {0}
-      MedusaZip(#[from] MedusaZipError),
-      /// error performing parallel crawl: {0}
-      MedusaCrawl(#[from] MedusaCrawlError),
-      /// error in zip entry name: {0}
-      MedusaNameFormat(#[from] MedusaNameFormatError),
-      /// error in merging zips: {0}
-      MedusaMerge(#[from] MedusaMergeError),
-      /// error performing top-level i/o: {0}
-      Io(#[from] io::Error),
-      /// error de/serializing json: {0}
-      Json(#[from] serde_json::Error),
-      /// error creating output zip file: {0}
-      Destination(#[from] DestinationError),
-      /// error parsing merge arguments: {0}
-      MergeArg(#[from] MergeArgParseError),
-      /// error in zip operation: {0}
-      Zip(#[from] ZipError),
-    }
-
     impl Cli {
-      pub async fn run(self) -> Result<(), MedusaCliError> {
+      pub async fn run(self) -> eyre::Result<()> {
         let Self { command } = self;
 
         match command {
@@ -227,6 +197,7 @@ mod cli {
 
             /* Read json serialization from stdin. */
             let mut input_json: Vec<u8> = Vec::new();
+            /* FIXME: convert this into *lines* of ResolvedPath (or something better)!! */
             io::stdin().read_to_end(&mut input_json).await?;
             let crawl_result: CrawlResult = serde_json::from_slice(&input_json)?;
 
@@ -342,7 +313,11 @@ mod cli {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> eyre::Result<()> {
+  use clap::Parser as _;
+  use eyre::WrapErr;
+
   let cli = cli::Cli::parse();
-  cli.run().await.expect("top-level error");
+  cli.run().await.wrap_err("top-level error")?;
+  Ok(())
 }
