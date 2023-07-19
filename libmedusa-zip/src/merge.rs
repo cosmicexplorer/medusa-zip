@@ -148,7 +148,7 @@ impl MedusaMerge {
 
         for src in sources.into_iter() {
           let archive = task::spawn_blocking(move || {
-            let handle = std::fs::OpenOptions::new().read(true).open(&src)?;
+            let handle = std::fs::OpenOptions::new().read(true).open(src)?;
             ZipArchive::new(handle)
           })
           .await??;

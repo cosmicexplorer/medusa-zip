@@ -38,7 +38,8 @@
   clippy::len_without_is_empty,
   clippy::redundant_field_names,
   clippy::too_many_arguments,
-  clippy::single_component_path_imports
+  clippy::single_component_path_imports,
+  clippy::double_must_use
 )]
 /* Default isn't as big a deal as people seem to think it is. */
 #![allow(clippy::new_without_default, clippy::new_ret_no_self)]
@@ -126,9 +127,7 @@ impl EntryName {
   }
 
   fn iter_components(&self, range: Range<usize>) -> impl Iterator<Item=&str> {
-    (&self.components[range])
-      .iter()
-      .map(|r| &self.name[r.clone()])
+    self.components[range].iter().map(|r| &self.name[r.clone()])
   }
 
   pub fn validate(name: String) -> Result<Self, MedusaNameFormatError> {
@@ -136,18 +135,16 @@ impl EntryName {
       Err(MedusaNameFormatError::NameIsEmpty)
     } else if name.starts_with('/') {
       /* We won't produce any non-relative paths. */
-      Err(MedusaNameFormatError::NameStartsWithSlash(name.to_string()))
+      Err(MedusaNameFormatError::NameStartsWithSlash(name))
     } else if name.starts_with("./") {
       /* We refuse to try to process ./ paths, asking the user to strip them
        * instead. */
-      Err(MedusaNameFormatError::NameStartsWithDotSlash(
-        name.to_string(),
-      ))
+      Err(MedusaNameFormatError::NameStartsWithDotSlash(name))
     } else if name.ends_with('/') {
       /* We only enter file names. */
-      Err(MedusaNameFormatError::NameEndsWithSlash(name.to_string()))
+      Err(MedusaNameFormatError::NameEndsWithSlash(name))
     } else if name.contains("//") {
-      Err(MedusaNameFormatError::NameHasDoubleSlash(name.to_string()))
+      Err(MedusaNameFormatError::NameHasDoubleSlash(name))
     } else {
       let components = Self::split_indices(&name);
       Ok(Self { name, components })

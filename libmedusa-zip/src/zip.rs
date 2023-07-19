@@ -372,8 +372,9 @@ pub enum CompressionMethod {
 pub struct CompressionOptions {
   /// This method is a default set for the entire file.
   ///
-  /// The [`zip`] library will internally set compression to [`CompressionMethod::Stored`] for
-  /// extremely small directory entries regardless of this setting as an optimization.
+  /// The [`zip`] library will internally set compression to
+  /// [`CompressionMethod::Stored`] for extremely small directory entries
+  /// regardless of this setting as an optimization.
   #[arg(value_enum, default_value_t, long)]
   pub compression_method: CompressionMethod,
   /// The degree of computational effort to exert for the
@@ -417,7 +418,7 @@ impl CompressionStrategy {
       compression_method,
       compression_level,
     } = options;
-    match compression_method.clone() {
+    match compression_method {
       CompressionMethod::Stored => match compression_level {
         None => Ok(Self::Stored),
         Some(level) => Err(ParseCompressionOptionsError::CompressionLevelWithStored(
@@ -513,7 +514,8 @@ pub struct EntryModifications {
   /// This prefixes a directory path to every entry without creating any of its
   /// parent directories.
   ///
-  /// These prefixes always come before any prefixes introduced by [`Self::own_prefix`].
+  /// These prefixes always come before any prefixes introduced by
+  /// [`Self::own_prefix`].
   ///
   /// `--silent-external-prefix .deps` => `[.deps/a, .deps/b, ...]`
   #[arg(long, default_value = None)]
@@ -773,7 +775,8 @@ pub enum Parallelism {
   /// Read source files and copy them to the output zip in order.
   #[default]
   Synchronous,
-  /// `[EXPERIMENTAL]` Parallelize creation by splitting up the input into chunks.
+  /// `[EXPERIMENTAL]` Parallelize creation by splitting up the input into
+  /// chunks.
   ParallelMerge,
 }
 
@@ -803,7 +806,7 @@ impl ZipOptionsInitializers {
   ) -> Result<zip::write::FileOptions, InitializeZipOptionsError> {
     let Self { initializers } = self;
     for initializer in initializers.iter() {
-      options = initializer.set_zip_options_for_file(options, &metadata)?;
+      options = initializer.set_zip_options_for_file(options, metadata)?;
     }
     Ok(options)
   }
