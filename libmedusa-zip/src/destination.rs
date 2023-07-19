@@ -108,8 +108,6 @@ impl DestinationBehavior {
         (f, false)
       },
     };
-    /* FIXME: remove all the unnecessary tokio::fs::File usage that requires
-     * calling .into_std() in case it's slow! */
     let file = file.into_std().await;
 
     let writer = task::spawn_blocking(move || {

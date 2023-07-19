@@ -18,7 +18,7 @@ use displaydoc::Display;
 use futures::stream::StreamExt;
 use parking_lot::Mutex;
 use thiserror::Error;
-use tokio::{fs, io, sync::mpsc, task};
+use tokio::{io, sync::mpsc, task};
 use tokio_stream::wrappers::ReceiverStream;
 use zip::{
   read::ZipArchive,
@@ -147,9 +147,11 @@ impl MedusaMerge {
         previous_directory_components = current_directory_components;
 
         for src in sources.into_iter() {
-          let handle = fs::OpenOptions::new().read(true).open(&src).await?;
-          let handle = handle.into_std().await;
-          let archive = task::spawn_blocking(move || ZipArchive::new(handle)).await??;
+          let archive = task::spawn_blocking(move || {
+            let handle = std::fs::OpenOptions::new().read(true).open(&src)?;
+            ZipArchive::new(handle)
+          })
+          .await??;
           handle_tx
             .send(IntermediateMergeEntry::MergeZip(archive))
             .await?;
