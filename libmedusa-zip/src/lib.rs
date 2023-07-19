@@ -99,9 +99,14 @@ impl EntryName {
     }
   }
 
-  pub(crate) fn into_string(self) -> String { self.name }
+  pub(crate) fn into_string(self) -> String {
+    if self.is_empty() {
+      panic!("attempted to write an empty EntryName!");
+    }
+    self.name
+  }
 
-  pub(crate) fn add_prefix(&mut self, prefix: &EntryName) {
+  pub fn add_prefix(&mut self, prefix: &Self) {
     if prefix.is_empty() {
       return;
     }
@@ -109,7 +114,7 @@ impl EntryName {
     self.components = Self::split_indices(&self.name);
   }
 
-  pub(crate) fn split_indices(s: &str) -> Vec<Range<usize>> {
+  fn split_indices(s: &str) -> Vec<Range<usize>> {
     let mut prev_begin: usize = 0;
     let mut components: Vec<Range<usize>> = Vec::new();
     for (match_start, matched_str) in s.match_indices('/') {
