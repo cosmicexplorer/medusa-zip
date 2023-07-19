@@ -19,7 +19,7 @@ use clap::{
   Args, ValueEnum,
 };
 use displaydoc::Display;
-use futures::{future::try_join_all, stream::StreamExt};
+use futures::stream::StreamExt;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rayon::prelude::*;
@@ -73,6 +73,8 @@ pub enum MedusaZipError {
   ProcessZipOptions(#[from] InitializeZipOptionsError),
   /// error receiving from a oneshot channel: {0}
   OneshotRecv(#[from] oneshot::error::RecvError),
+  /// error sending intermediate archiev: {0}
+  Send(#[from] mpsc::error::SendError<ZipArchive<tempfile::SpooledTempFile>>),
 }
 
 pub trait DefaultInitializeZipOptions {
@@ -800,8 +802,9 @@ pub struct MedusaZip {
 }
 
 /* TODO: make these configurable!!! */
-const INTERMEDIATE_ZIP_THREADS: usize = 20;
-const PARALLEL_ENTRIES: usize = 20;
+const INTERMEDIATE_CHUNK_SIZE: usize = 2000;
+const MAX_PARALLEL_INTERMEDIATES: usize = 12;
+const PER_INTERMEDIATE_FILE_IO_QUEUE_LENGTH: usize = 20;
 const INTERMEDIATE_OUTPUT_SPOOL_THRESHOLD: usize = 20_000;
 
 pub struct ZipOptionsInitializers {
@@ -837,7 +840,8 @@ impl MedusaZip {
     .await??;
 
     /* (2) Map to individual file handles and/or in-memory "immediate" zip files. */
-    let (handle_tx, handle_rx) = mpsc::channel::<IntermediateSingleEntry>(PARALLEL_ENTRIES);
+    let (handle_tx, handle_rx) =
+      mpsc::channel::<IntermediateSingleEntry>(PER_INTERMEDIATE_FILE_IO_QUEUE_LENGTH);
     let entries = entries.to_vec();
     let handle_stream_task = task::spawn(async move {
       for entry in entries.into_iter() {
@@ -912,30 +916,32 @@ impl MedusaZip {
     Output: Write+Seek+Send+'static,
   {
     let options_initializers = Arc::new(Self::options_initializers(mtime_behavior));
+
+    let (intermediate_tx, intermediate_rx) =
+      mpsc::channel::<ZipArchive<tempfile::SpooledTempFile>>(MAX_PARALLEL_INTERMEDIATES);
+    let mut handle_intermediates = ReceiverStream::new(intermediate_rx);
+
     /* (1) Split into however many subtasks (which may just be one) to do
      * "normally". */
-    /* TODO: fully recursive? or just one level of recursion? */
-    let chunk_size: usize = if entries.len() >= INTERMEDIATE_ZIP_THREADS {
-      entries.len() / INTERMEDIATE_ZIP_THREADS
-    } else {
-      entries.len()
-    };
-    let ordered_intermediates = try_join_all(
-      entries
-        .chunks(chunk_size)
-        .map(|entries| Self::zip_intermediate(entries, zip_options, options_initializers.clone())),
-    )
-    .await?;
+    let intermediate_stream_task = task::spawn(async move {
+      for entry_chunk in entries.chunks(INTERMEDIATE_CHUNK_SIZE) {
+        let archive =
+          Self::zip_intermediate(entry_chunk, zip_options, options_initializers.clone()).await?;
+        intermediate_tx.send(archive).await?;
+      }
+      Ok::<(), MedusaZipError>(())
+    });
 
-    /* TODO: start piping in the first intermediate file as soon as it's ready! */
-    for intermediate_zip in ordered_intermediates.into_iter() {
+    /* (2) ??? */
+    while let Some(intermediate_archive) = handle_intermediates.next().await {
       let output_zip = output_zip.clone();
       task::spawn_blocking(move || {
-        output_zip.lock().merge_archive(intermediate_zip)?;
+        output_zip.lock().merge_archive(intermediate_archive)?;
         Ok::<(), MedusaZipError>(())
       })
       .await??;
     }
+    intermediate_stream_task.await??;
 
     Ok(())
   }
