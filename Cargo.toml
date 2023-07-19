@@ -31,5 +31,5 @@ default-members         = [
 clap                    = { version = "4", features = ["derive"] }
 displaydoc              = { git = "https://github.com/yaahc/displaydoc", rev = "7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27" }
 thiserror               = "1.0.30"
-zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "f8add623ca2a0ade4a95a1873c631a51ce7c5869", features = ["rayon", "merge"] }
+zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "94c21b77b21db4133a210f335e0671f4ea85d6a0", features = ["rayon", "merge"] }
 # zip                     = { path = "/home/cosmicexplorer/tools/zip", features = ["rayon", "merge"] }

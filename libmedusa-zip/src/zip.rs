@@ -767,8 +767,7 @@ impl IntermediateSingleEntry {
             zip_output.start_file(name.into_string(), zip_options)?;
             std::io::copy(&mut handle, &mut zip_output)
               .map_err(|e| MedusaInputReadError::SourceNotFound(source.clone(), e))?;
-            let out_file = zip_output.finish()?;
-            let temp_zip = ZipArchive::new(out_file)?;
+            let temp_zip = zip_output.finish_into_readable()?;
             Ok::<ZipArchive<_>, MedusaInputReadError>(temp_zip)
           })
           .await
@@ -884,8 +883,8 @@ impl MedusaZip {
       let mut zip_wrapper = Arc::into_inner(intermediate_output)
         .expect("no other references should exist to intermediate_output")
         .into_inner();
-      let temp_file = zip_wrapper.finish()?;
-      ZipArchive::new(temp_file)
+      let temp_file = zip_wrapper.finish_into_readable()?;
+      Ok::<_, ZipError>(temp_file)
     })
     .await??;
 
