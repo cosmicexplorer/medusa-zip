@@ -985,8 +985,13 @@ impl MedusaZip {
     Ok(())
   }
 
-  pub async fn zip<Output>(self, output_zip: ZipWriter<Output>) -> Result<Output, MedusaZipError>
-  where Output: Write+Seek+Send+'static {
+  pub async fn zip<Output>(
+    self,
+    output_zip: ZipWriter<Output>,
+  ) -> Result<ZipWriter<Output>, MedusaZipError>
+  where
+    Output: Write+Seek+Send+'static,
+  {
     let Self {
       input_files,
       zip_options: ZipOutputOptions {
@@ -1020,15 +1025,9 @@ impl MedusaZip {
       },
     }
 
-    let output_handle = task::spawn_blocking(move || {
-      let mut output_zip = Arc::into_inner(output_zip)
-        .expect("no other references should exist to output_zip")
-        .into_inner();
-      let output_handle = output_zip.finish()?;
-      Ok::<Output, MedusaZipError>(output_handle)
-    })
-    .await??;
-
-    Ok(output_handle)
+    let output_zip = Arc::into_inner(output_zip)
+      .expect("no other references should exist to output_zip")
+      .into_inner();
+    Ok(output_zip)
   }
 }

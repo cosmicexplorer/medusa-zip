@@ -232,12 +232,13 @@ mod cli {
             let output_zip = output.initialize().await?;
 
             let crawl: MedusaCrawl = crawl.into();
+            /* Perform the actual crawl, traversing the filesystem in the process. */
             let crawl_result = crawl.crawl_paths().await?;
 
             /* Apply options from command line to produce a zip spec. */
             let crawled_zip = crawl_result.medusa_zip(zip_options, modifications, parallelism)?;
 
-            /* Do the parallel zip!!! */
+            /* Do the parallel zip over the crawled files!!! */
             /* TODO: log the file output! */
             let _output_file_handle = crawled_zip.zip(output_zip).await?;
           },
@@ -262,15 +263,11 @@ mod cli {
             /* Do the parallel zip!!! */
             let output_zip_file_handle = crawled_zip.zip(output_zip).await?;
 
-            /* TODO: we could avoid deserializing the central directory record here,
-             * maybe. */
-            let same_output_zip = ZipWriter::new_append(output_zip_file_handle)?;
-
             let merge_spec = MedusaMerge::parse_from_args(source_zips_by_prefix.iter())?;
             /* Copy over constituent zips into current. */
             /* TODO: log the file output! */
             let _output_file_handle = merge_spec
-              .merge(zip_options.mtime_behavior, same_output_zip)
+              .merge(zip_options.mtime_behavior, output_zip_file_handle)
               .await?;
           },
           Command::CrawlZipMerge {
@@ -293,15 +290,11 @@ mod cli {
             /* Do the parallel zip!!! */
             let output_zip_file_handle = crawled_zip.zip(output_zip).await?;
 
-            /* TODO: we could avoid deserializing the central directory record here,
-             * maybe. */
-            let same_output_zip = ZipWriter::new_append(output_zip_file_handle)?;
-
             let merge_spec = MedusaMerge::parse_from_args(source_zips_by_prefix.iter())?;
             /* Copy over constituent zips into current. */
             /* TODO: log the file output! */
             let _output_file_handle = merge_spec
-              .merge(zip_options.mtime_behavior, same_output_zip)
+              .merge(zip_options.mtime_behavior, output_zip_file_handle)
               .await?;
           },
         }
