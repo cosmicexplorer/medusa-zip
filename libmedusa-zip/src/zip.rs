@@ -612,7 +612,7 @@ impl EntrySpecificationList {
     let mut ret: Vec<ZipEntrySpecification> = Vec::new();
 
     let cached_prefix: EntryName = {
-      /* FIXME: perform this validation in  clap Arg derivation for EntryName! */
+      /* TODO: make EntryName work more cleanly for directories and files! */
       let EntryModifications {
         silent_external_prefix,
         own_prefix,
@@ -655,8 +655,8 @@ impl EntrySpecificationList {
 
     let mut previous_directory_components: Vec<&str> = Vec::new();
 
-    /* TODO: explain why .iter_mut() is used here (to share dir components) over
-     * .into_iter()! */
+    /* NB: .iter_mut() is used here to enable the use of &str references in
+     * previous_directory_components! */
     for FileSource { source, name } in specs.iter_mut() {
       /* Split into directory components so we can add directory entries before any
        * files from that directory. */
