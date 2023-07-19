@@ -24,12 +24,16 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use static_init;
-use tempfile::tempfile;
+use tempfile;
 use thiserror::Error;
 use time::{
   error::ComponentRange, format_description::well_known::Rfc3339, OffsetDateTime, UtcOffset,
 };
-use tokio::{fs, io, sync::mpsc, task};
+use tokio::{
+  fs, io,
+  sync::{mpsc, oneshot},
+  task,
+};
 use tokio_stream::wrappers::ReceiverStream;
 use zip::{
   self,
@@ -67,6 +71,8 @@ pub enum MedusaZipError {
   ParseZipOptions(#[from] ParseCompressionOptionsError),
   /// error processing zip file entry options: {0}
   ProcessZipOptions(#[from] InitializeZipOptionsError),
+  /// error receiving from a oneshot channel: {0}
+  OneshotRecv(#[from] oneshot::error::RecvError),
 }
 
 pub trait DefaultInitializeZipOptions {
@@ -705,11 +711,10 @@ pub enum MedusaInputReadError {
 #[derive(Debug)]
 pub enum IntermediateSingleEntry {
   Directory(EntryName),
-  File(EntryName, fs::File),
-  ImmediateFile(ZipArchive<std::io::Cursor<Vec<u8>>>),
+  File(oneshot::Receiver<Result<ZipArchive<tempfile::SpooledTempFile>, MedusaInputReadError>>),
 }
 
-const SMALL_FILE_MAX_SIZE: usize = 10_000;
+const PER_FILE_SPOOL_THRESHOLD: usize = 3_000;
 
 impl IntermediateSingleEntry {
   pub async fn open_handle(
@@ -718,53 +723,62 @@ impl IntermediateSingleEntry {
     options_initializers: Arc<ZipOptionsInitializers>,
   ) -> Result<Self, MedusaInputReadError> {
     match entry {
+      /* If it's a directory, we don't need any more info. */
       ZipEntrySpecification::Directory(name) => Ok(Self::Directory(name)),
+      /* If it's a file, we're need to extract its contents. */
       ZipEntrySpecification::File(FileSource { name, source }) => {
+        /* Get the file handle */
         let handle = fs::OpenOptions::new()
           .read(true)
           .open(&source)
           .await
           .map_err(|e| MedusaInputReadError::SourceNotFound(source.clone(), e))?;
+        /* Get the filesystem metadata for this file. */
         let metadata = handle
           .metadata()
           .await
-          .map_err(|e| MedusaInputReadError::SourceNotFound(source, e))?;
+          .map_err(|e| MedusaInputReadError::SourceNotFound(source.clone(), e))?;
+        /* Configure the zip options for this file, such as compression, given the
+         * metadata. */
+        zip_options = options_initializers.set_zip_options_for_file(zip_options, &metadata)?;
 
-        let reported_len: usize = metadata.len() as usize;
+        /* Create the spooled temporary zip file. */
+        let mut zip_output: ZipWriter<tempfile::SpooledTempFile> = task::spawn_blocking(|| {
+          let temp_file = tempfile::spooled_tempfile(PER_FILE_SPOOL_THRESHOLD);
+          let zip_wrapper = ZipWriter::new(temp_file);
+          Ok::<_, MedusaInputReadError>(zip_wrapper)
+        })
+        .await??;
 
-        /* If the file is large, we avoid trying to read it yet. */
-        /* FIXME: handle the case of extremely large files: begin trying to buffer
-         * large files in memory ahead of time, but only up to a certain
-         * number. This will allow a single intermediate zip to start
-         * buffering the results to multiple large files at once instead
-         * of getting blocked on a single processor thread. */
-        /* NB: can do this by converting a Self::File() into a stream that writes a
-         * zip archive into a tempfile (not just in-mem), then returns a
-         * ZipArchive of the tempfile. */
-        if reported_len > SMALL_FILE_MAX_SIZE {
-          Ok(Self::File(name, handle))
-        } else {
-          /* Otherwise, we enter the file into a single-entry zip. */
-          let buf = std::io::Cursor::new(Vec::new());
-          let mut mem_zip = ZipWriter::new(buf);
+        /* We can send a oneshot::Receiver over an mpsc::bounded() channel in order
+         * to force our receiving send of this the mpsc::bounded() to await
+         * until the oneshot::Receiver is complete. */
+        let (tx, rx) =
+          oneshot::channel::<Result<ZipArchive<tempfile::SpooledTempFile>, MedusaInputReadError>>();
 
-          zip_options = options_initializers.set_zip_options_for_file(zip_options, &metadata)?;
-
-          /* FIXME: quit out of buffering if the file is actually larger than
-           * reported!!! Also consider doing an async seek of the file to see where it
-           * ends; this does not seem too bad of an idea actually. */
-          let mut handle = handle.into_std().await;
-          let mem_zip = task::spawn_blocking(move || {
-            mem_zip.start_file(name.into_string(), zip_options)?;
-            std::io::copy(&mut handle, &mut mem_zip)?;
-            let buf = mem_zip.finish()?;
-            let mem_zip = ZipArchive::new(buf)?;
-            Ok::<_, ZipError>(mem_zip)
+        let mut handle = handle.into_std().await;
+        task::spawn(async move {
+          let completed_single_zip: Result<
+            ZipArchive<tempfile::SpooledTempFile>,
+            MedusaInputReadError,
+          > = task::spawn_blocking(move || {
+            /* In parallel, we will be writing this input file out to a spooled temporary
+             * zip containing just this one entry. */
+            zip_output.start_file(name.into_string(), zip_options)?;
+            std::io::copy(&mut handle, &mut zip_output)
+              .map_err(|e| MedusaInputReadError::SourceNotFound(source.clone(), e))?;
+            let out_file = zip_output.finish()?;
+            let temp_zip = ZipArchive::new(out_file)?;
+            Ok::<ZipArchive<_>, MedusaInputReadError>(temp_zip)
           })
-          .await??;
+          .await
+          .expect("joining should not fail");
+          tx.send(completed_single_zip)
+            .expect("rx should always be open");
+        });
+        /* NB: not awaiting this spawned task! */
 
-          Ok(Self::ImmediateFile(mem_zip))
-        }
+        Ok(Self::File(rx))
       },
     }
   }
@@ -789,6 +803,7 @@ pub struct MedusaZip {
 /* TODO: make these configurable!!! */
 const INTERMEDIATE_ZIP_THREADS: usize = 20;
 const PARALLEL_ENTRIES: usize = 20;
+const INTERMEDIATE_OUTPUT_SPOOL_THRESHOLD: usize = 20_000;
 
 pub struct ZipOptionsInitializers {
   pub initializers: Vec<Box<dyn InitializeZipOptionsForSpecificFile+Send+Sync>>,
@@ -813,10 +828,10 @@ impl MedusaZip {
     entries: &[ZipEntrySpecification],
     zip_options: zip::write::FileOptions,
     options_initializers: Arc<ZipOptionsInitializers>,
-  ) -> Result<ZipArchive<std::fs::File>, MedusaZipError> {
+  ) -> Result<ZipArchive<tempfile::SpooledTempFile>, MedusaZipError> {
     /* (1) Create unnamed filesystem-backed temp file handle. */
     let intermediate_output = task::spawn_blocking(|| {
-      let temp_file = tempfile()?;
+      let temp_file = tempfile::spooled_tempfile(INTERMEDIATE_OUTPUT_SPOOL_THRESHOLD);
       let zip_wrapper = ZipWriter::new(temp_file);
       Ok::<_, MedusaZipError>(zip_wrapper)
     })
@@ -849,20 +864,12 @@ impl MedusaZip {
           })
           .await??;
         },
-        IntermediateSingleEntry::File(name, handle) => {
-          let mut handle = handle.into_std().await;
+        IntermediateSingleEntry::File(tmp_merge_archive) => {
+          let tmp_merge_archive: ZipArchive<tempfile::SpooledTempFile> =
+            tmp_merge_archive.await??;
           task::spawn_blocking(move || {
             let mut intermediate_output = intermediate_output.lock();
-            intermediate_output.start_file(name.into_string(), zip_options)?;
-            std::io::copy(&mut handle, &mut *intermediate_output)?;
-            Ok::<(), ZipError>(())
-          })
-          .await??;
-        },
-        IntermediateSingleEntry::ImmediateFile(archive) => {
-          task::spawn_blocking(move || {
-            let mut intermediate_output = intermediate_output.lock();
-            intermediate_output.merge_archive(archive)?;
+            intermediate_output.merge_archive(tmp_merge_archive)?;
             Ok::<(), ZipError>(())
           })
           .await??;
