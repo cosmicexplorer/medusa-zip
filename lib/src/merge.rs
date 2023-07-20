@@ -46,7 +46,7 @@ pub enum MedusaMergeError {
 
 #[derive(Debug, Clone)]
 pub struct MergeGroup {
-  pub prefix: EntryName,
+  pub prefix: Option<EntryName>,
   pub sources: Vec<PathBuf>,
 }
 
@@ -73,19 +73,18 @@ impl MedusaMerge {
     args: impl Iterator<Item=R>,
   ) -> Result<Self, MergeArgParseError> {
     let mut ret: Vec<MergeGroup> = Vec::new();
-    let mut current_prefix: Option<EntryName> = None;
+    let mut current_prefix: Option<Option<EntryName>> = None;
     let mut current_sources: Vec<PathBuf> = Vec::new();
     for arg in args {
       let arg: &str = arg.as_ref();
       /* If we are starting a new prefix: */
       if arg.starts_with('+') && arg.ends_with('/') {
         let new_prefix = &arg[1..arg.len() - 1];
-        let new_prefix = if new_prefix.is_empty() {
-          EntryName::empty()
+        let new_prefix: Option<EntryName> = if new_prefix.is_empty() {
+          None
         } else {
-          EntryName::validate(new_prefix.to_string())?
+          Some(EntryName::validate(new_prefix.to_string())?)
         };
-        /* Only None on the very first iteration of the loop. */
         if let Some(prefix) = current_prefix.take() {
           let group = MergeGroup {
             prefix,
@@ -93,12 +92,13 @@ impl MedusaMerge {
           };
           ret.push(group);
         } else {
+          /* Only None on the very first iteration of the loop. */
           assert!(current_sources.is_empty());
         }
         current_prefix = Some(new_prefix);
       } else {
         /* If no prefixes have been declared, assume they begin with an empty prefix. */
-        current_prefix.get_or_insert_with(EntryName::empty);
+        current_prefix.get_or_insert_with(|| None);
         current_sources.push(PathBuf::from(arg));
       }
     }
@@ -129,9 +129,12 @@ impl MedusaMerge {
       let mut previous_directory_components: Vec<String> = Vec::new();
       for MergeGroup { prefix, sources } in groups.into_iter() {
         let current_directory_components: Vec<String> = prefix
-          .all_components()
-          .map(|s| s.to_string())
-          .collect::<Vec<_>>();
+          .map(|p| {
+            p.all_components()
+              .map(|s| s.to_string())
+              .collect::<Vec<_>>()
+          })
+          .unwrap_or_default();
         for new_rightmost_components in calculate_new_rightmost_components(
           &previous_directory_components,
           &current_directory_components,
