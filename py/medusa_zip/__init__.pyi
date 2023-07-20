@@ -5,5 +5,17 @@
 #
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-def sum_as_string(a: int, b: int) -> str:
-    ...
+from pathlib import Path
+
+
+class EntryName:
+  def __init__(self, x: str, /) -> None: ...
+
+
+class FileSource:
+  def __init__(self, name: EntryName, source: Path) -> None: ...
+
+  @property
+  def name(self) -> EntryName: ...
+  @property
+  def source(self) -> Path: ...

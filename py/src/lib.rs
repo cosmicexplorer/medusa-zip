@@ -46,10 +46,73 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-use pyo3::prelude::*;
+use libmedusa_zip as lib;
+
+use pyo3::{exceptions::PyValueError, intern, prelude::*};
+
+use std::{convert::TryFrom, path::PathBuf};
+
 
 mod crawl;
 mod merge;
+
+
+#[pyclass]
+#[derive(Clone)]
+struct EntryName(pub String);
+
+#[pymethods]
+impl EntryName {
+  #[new]
+  fn new(name: String) -> PyResult<Self> {
+    /* TODO: better error! */
+    let parsed =
+      lib::EntryName::validate(name).map_err(|e| PyValueError::new_err(format!("{}", e)))?;
+    Ok(parsed.into())
+  }
+
+  fn __repr__(&self) -> String { format!("EntryName({:?})", &self.0) }
+
+  fn __str__(&self) -> String { self.0.clone() }
+}
+
+impl TryFrom<EntryName> for lib::EntryName {
+  type Error = lib::MedusaNameFormatError;
+
+  fn try_from(x: EntryName) -> Result<Self, Self::Error> {
+    let EntryName(x) = x;
+    Self::validate(x)
+  }
+}
+
+impl From<lib::EntryName> for EntryName {
+  fn from(x: lib::EntryName) -> Self { Self(x.into_string()) }
+}
+
+
+#[pyclass]
+struct FileSource {
+  #[pyo3(get)]
+  pub name: EntryName,
+  #[pyo3(get)]
+  pub source: PathBuf,
+}
+
+#[pymethods]
+impl FileSource {
+  #[new]
+  fn new(name: EntryName, source: PathBuf) -> Self { Self { name, source } }
+
+  fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+    let name = self.name.clone().into_py(py);
+    let name: String = name.call_method0(py, intern!(py, "__repr__"))?.extract(py)?;
+    Ok(format!(
+      "FileSource(name={}, source={:?})",
+      name, &self.source
+    ))
+  }
+}
+
 
 fn add_submodule(parent: &PyModule, py: Python<'_>, child: &PyModule) -> PyResult<()> {
   parent.add_submodule(child)?;
@@ -63,10 +126,14 @@ fn add_submodule(parent: &PyModule, py: Python<'_>, child: &PyModule) -> PyResul
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
 /// import the module.
 #[pymodule]
-fn pymedusa_zip(py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn pymedusa_zip(py: Python<'_>, medusa_zip: &PyModule) -> PyResult<()> {
   let crawl = crawl::crawl_module(py)?;
-  add_submodule(m, py, crawl)?;
+  add_submodule(medusa_zip, py, crawl)?;
   let merge = merge::merge_module(py)?;
-  add_submodule(m, py, merge)?;
+  add_submodule(medusa_zip, py, merge)?;
+
+  medusa_zip.add_class::<EntryName>()?;
+  medusa_zip.add_class::<FileSource>()?;
+
   Ok(())
 }

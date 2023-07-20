@@ -100,14 +100,14 @@ impl EntryName {
     }
   }
 
-  pub(crate) fn into_string(self) -> String {
+  pub fn into_string(self) -> String {
     if self.is_empty() {
       panic!("attempted to write an empty EntryName!");
     }
     self.name
   }
 
-  pub fn add_prefix(&mut self, prefix: &Self) {
+  pub(crate) fn add_prefix(&mut self, prefix: &Self) {
     if prefix.is_empty() {
       return;
     }

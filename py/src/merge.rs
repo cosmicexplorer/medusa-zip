@@ -18,6 +18,13 @@ use pyo3::{
 };
 
 
+/* #[pyclass] */
+/* #[derive(Clone)] */
+/* struct MergeGroup { */
+/*   pub prefix:  */
+/* } */
+
+
 pub(crate) fn merge_module(py: Python<'_>) -> PyResult<&PyModule> {
   let merge = PyModule::new(py, "merge")?;
 

@@ -13,6 +13,7 @@ use libmedusa_zip::crawl as lib_crawl;
 
 use pyo3::{
   exceptions::{PyException, PyValueError},
+  intern,
   prelude::*,
   types::PyList,
 };
@@ -85,7 +86,7 @@ struct CrawlResult {
 #[pymethods]
 impl CrawlResult {
   #[new]
-  fn new(py: Python<'_>, real_file_paths: &PyAny) -> PyResult<Self> {
+  fn new(real_file_paths: &PyAny) -> PyResult<Self> {
     let real_file_paths: Vec<ResolvedPath> = real_file_paths
       .iter()?
       .map(|rp| rp.and_then(PyAny::extract::<ResolvedPath>))
@@ -163,12 +164,15 @@ impl MedusaCrawl {
     })
   }
 
-  fn __repr__(&self, py: Python<'_>) -> String {
+  fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
     let ignores = self.ignores.clone().into_py(py);
-    format!(
+    let ignores: String = ignores
+      .call_method0(py, intern!(py, "__repr__"))?
+      .extract(py)?;
+    Ok(format!(
       "MedusaCrawl(paths_to_crawl={:?}, ignores={})",
       &self.paths_to_crawl, ignores
-    )
+    ))
   }
 
   fn crawl_paths<'a>(&self, py: Python<'a>) -> PyResult<&'a PyAny> {
