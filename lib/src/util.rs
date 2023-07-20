@@ -9,7 +9,7 @@
 
 //! ???
 
-pub mod clap_handlers {
+pub(crate) mod clap_handlers {
   use clap::error::{ContextKind, ContextValue, ErrorKind};
 
   pub fn prepare_clap_error<R: AsRef<str>>(

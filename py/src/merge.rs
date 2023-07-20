@@ -117,14 +117,20 @@ impl MedusaMerge {
       /* TODO: better error! */
       .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
     let mtime_behavior: lib_zip::ModifiedTimeBehavior = mtime_behavior.into();
-    let ZipFileWriter(output_zip) = output_zip;
+    let ZipFileWriter {
+      output_path,
+      zip_writer,
+    } = output_zip;
     pyo3_asyncio::tokio::future_into_py(py, async move {
       let output_zip = merge
-        .merge(mtime_behavior, output_zip)
+        .merge(mtime_behavior, zip_writer)
         .await
         /* TODO: better error! */
         .map_err(|e| PyException::new_err(format!("{}", e)))?;
-      let output_zip = ZipFileWriter(output_zip);
+      let output_zip = ZipFileWriter {
+        output_path,
+        zip_writer,
+      };
       Ok::<_, PyErr>(output_zip)
     })
   }

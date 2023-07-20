@@ -10,13 +10,13 @@
 //! ???
 
 use crate::{
+  destination::OutputWrapper,
   zip::{calculate_new_rightmost_components, DefaultInitializeZipOptions, ModifiedTimeBehavior},
   EntryName, MedusaNameFormatError,
 };
 
 use displaydoc::Display;
 use futures::stream::StreamExt;
-use parking_lot::Mutex;
 use thiserror::Error;
 use tokio::{io, sync::mpsc, task};
 use tokio_stream::wrappers::ReceiverStream;
@@ -28,8 +28,8 @@ use zip::{
 
 use std::{
   io::{Seek, Write},
+  mem,
   path::PathBuf,
-  sync::Arc,
 };
 
 #[derive(Debug, Display, Error)]
@@ -88,7 +88,7 @@ impl MedusaMerge {
         if let Some(prefix) = current_prefix.take() {
           let group = MergeGroup {
             prefix,
-            sources: current_sources.drain(..).collect(),
+            sources: mem::take(&mut current_sources),
           };
           ret.push(group);
         } else {
@@ -115,15 +115,18 @@ impl MedusaMerge {
   pub async fn merge<Output>(
     self,
     mtime_behavior: ModifiedTimeBehavior,
-    output_zip: ZipWriter<Output>,
-  ) -> Result<ZipWriter<Output>, MedusaMergeError>
+    /* FIXME: make a trait that's like BorrowMut, but doesn't require needing a mutable
+     * reference (?) */
+    output_zip: OutputWrapper<ZipWriter<Output>>,
+  ) -> Result<OutputWrapper<ZipWriter<Output>>, MedusaMergeError>
   where
     Output: Write+Seek+Send+'static,
   {
     let Self { groups } = self;
     let zip_options = mtime_behavior.set_zip_options_static(ZipLibraryFileOptions::default());
 
-    /* This shouldn't really need to be bounded at all, since the task is entirely synchronous. */
+    /* This shouldn't really need to be bounded at all, since the task is
+     * entirely synchronous. */
     let (handle_tx, handle_rx) = mpsc::channel::<IntermediateMergeEntry>(PARALLEL_MERGE_ENTRIES);
     let mut handle_jobs = ReceiverStream::new(handle_rx);
     let handle_stream_task = task::spawn(async move {
@@ -163,13 +166,12 @@ impl MedusaMerge {
       Ok::<(), MedusaMergeError>(())
     });
 
-    let output_zip = Arc::new(Mutex::new(output_zip));
     while let Some(intermediate_entry) = handle_jobs.next().await {
       let output_zip = output_zip.clone();
       match intermediate_entry {
         IntermediateMergeEntry::AddDirectory(name) => {
           task::spawn_blocking(move || {
-            let mut output_zip = output_zip.lock();
+            let mut output_zip = output_zip.lease();
             output_zip.add_directory(name.into_string(), zip_options)?;
             Ok::<(), ZipError>(())
           })
@@ -177,7 +179,7 @@ impl MedusaMerge {
         },
         IntermediateMergeEntry::MergeZip(source_archive) => {
           task::spawn_blocking(move || {
-            let mut output_zip = output_zip.lock();
+            let mut output_zip = output_zip.lease();
             output_zip.merge_archive(source_archive)?;
             Ok::<(), ZipError>(())
           })
@@ -187,9 +189,6 @@ impl MedusaMerge {
     }
     handle_stream_task.await??;
 
-    let output_zip = Arc::into_inner(output_zip)
-      .expect("no other references should exist to output_zip")
-      .into_inner();
     Ok(output_zip)
   }
 }

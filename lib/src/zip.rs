@@ -11,7 +11,9 @@
 
 #[cfg(doc)]
 use crate::merge::MergeGroup;
-use crate::{util::clap_handlers, EntryName, FileSource, MedusaNameFormatError};
+use crate::{
+  destination::OutputWrapper, util::clap_handlers, EntryName, FileSource, MedusaNameFormatError,
+};
 
 use cfg_if::cfg_if;
 use clap::{
@@ -908,7 +910,7 @@ impl MedusaZip {
 
   async fn zip_parallel<Output>(
     entries: Vec<ZipEntrySpecification>,
-    output_zip: Arc<Mutex<ZipWriter<Output>>>,
+    output_zip: OutputWrapper<ZipWriter<Output>>,
     zip_options: zip::write::FileOptions,
     mtime_behavior: ModifiedTimeBehavior,
   ) -> Result<(), MedusaZipError>
@@ -936,7 +938,7 @@ impl MedusaZip {
     while let Some(intermediate_archive) = handle_intermediates.next().await {
       let output_zip = output_zip.clone();
       task::spawn_blocking(move || {
-        output_zip.lock().merge_archive(intermediate_archive)?;
+        output_zip.lease().merge_archive(intermediate_archive)?;
         Ok::<(), MedusaZipError>(())
       })
       .await??;
@@ -948,7 +950,7 @@ impl MedusaZip {
 
   async fn zip_synchronous<Output>(
     entries: Vec<ZipEntrySpecification>,
-    output_zip: Arc<Mutex<ZipWriter<Output>>>,
+    output_zip: OutputWrapper<ZipWriter<Output>>,
     zip_options: zip::write::FileOptions,
     mtime_behavior: ModifiedTimeBehavior,
   ) -> Result<(), MedusaZipError>
@@ -961,7 +963,7 @@ impl MedusaZip {
       match entry {
         ZipEntrySpecification::Directory(name) => {
           task::spawn_blocking(move || {
-            let mut output_zip = output_zip.lock();
+            let mut output_zip = output_zip.lease();
             output_zip.add_directory(name.into_string(), zip_options)?;
             Ok::<(), ZipError>(())
           })
@@ -978,7 +980,7 @@ impl MedusaZip {
             options_initializers.set_zip_options_for_file(zip_options, &metadata)?;
           let mut f = f.into_std().await;
           task::spawn_blocking(move || {
-            let mut output_zip = output_zip.lock();
+            let mut output_zip = output_zip.lease();
             output_zip.start_file(name.into_string(), zip_options)?;
             std::io::copy(&mut f, &mut *output_zip)?;
             Ok::<(), MedusaZipError>(())
@@ -993,8 +995,8 @@ impl MedusaZip {
 
   pub async fn zip<Output>(
     self,
-    output_zip: ZipWriter<Output>,
-  ) -> Result<ZipWriter<Output>, MedusaZipError>
+    output_zip: OutputWrapper<ZipWriter<Output>>,
+  ) -> Result<OutputWrapper<ZipWriter<Output>>, MedusaZipError>
   where
     Output: Write+Seek+Send+'static,
   {
@@ -1021,7 +1023,6 @@ impl MedusaZip {
       zip_options = initializer.set_zip_options_static(zip_options);
     }
 
-    let output_zip = Arc::new(Mutex::new(output_zip));
     match parallelism {
       Parallelism::Synchronous => {
         Self::zip_synchronous(entries, output_zip.clone(), zip_options, mtime_behavior).await?;
@@ -1031,9 +1032,6 @@ impl MedusaZip {
       },
     }
 
-    let output_zip = Arc::into_inner(output_zip)
-      .expect("no other references should exist to output_zip")
-      .into_inner();
     Ok(output_zip)
   }
 }

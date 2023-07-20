@@ -11,6 +11,7 @@
 
 use clap::ValueEnum;
 use displaydoc::Display;
+use parking_lot::Mutex;
 use thiserror::Error;
 use tokio::{
   fs,
@@ -19,7 +20,7 @@ use tokio::{
 };
 use zip::{result::ZipError, ZipWriter};
 
-use std::path::Path;
+use std::{ops::DerefMut, path::Path, sync::Arc};
 
 #[derive(Debug, Display, Error)]
 pub enum DestinationError {
@@ -119,4 +120,32 @@ impl DestinationBehavior {
 
     Ok(writer)
   }
+}
+
+pub struct OutputWrapper<O> {
+  handle: Arc<Mutex<O>>,
+}
+
+impl<O> Clone for OutputWrapper<O> {
+  fn clone(&self) -> Self {
+    Self {
+      handle: Arc::clone(&self.handle),
+    }
+  }
+}
+
+impl<O> OutputWrapper<O> {
+  pub fn wrap(writer: O) -> Self {
+    Self {
+      handle: Arc::new(Mutex::new(writer)),
+    }
+  }
+
+  pub fn reclaim(self) -> O {
+    Arc::into_inner(self.handle)
+      .expect("expected this to be the last strong ref")
+      .into_inner()
+  }
+
+  pub fn lease(&self) -> impl DerefMut<Target=O>+'_ { self.handle.lock() }
 }

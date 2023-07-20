@@ -50,7 +50,16 @@ impl From<lib_destination::DestinationBehavior> for DestinationBehavior {
 
 
 #[pyclass]
-pub struct ZipFileWriter(pub ZipWriter<File>);
+#[derive(Clone)]
+pub struct ZipFileWriter {
+  pub output_path: PathBuf,
+  pub zip_writer: lib_destination::OutputWrapper<ZipWriter<File>>,
+}
+
+#[pymethods]
+impl ZipFileWriter {
+  fn __str__(&self) -> String { format!("ZipFileWriter(output_path={:?}, ...)", &self.output_path) }
+}
 
 
 #[pymethods]
@@ -58,11 +67,15 @@ impl DestinationBehavior {
   fn initialize<'a>(&self, py: Python<'a>, path: PathBuf) -> PyResult<&'a PyAny> {
     let behavior: lib_destination::DestinationBehavior = (*self).into();
     pyo3_asyncio::tokio::future_into_py(py, async move {
-      let ret = behavior
+      let output_zip_writer: ZipWriter<File> = behavior
         .initialize(&path)
         .await
         .map_err(|e| PyIOError::new_err(format!("{}", e)))?;
-      Ok(ZipFileWriter(ret))
+      let output_wrapper = lib_destination::OutputWrapper::wrap(output_zip_writer);
+      Ok(ZipFileWriter {
+        output_path: path,
+        zip_writer: output_wrapper,
+      })
     })
   }
 }

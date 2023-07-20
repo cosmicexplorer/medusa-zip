@@ -160,6 +160,7 @@ mod cli {
 
     use libmedusa_zip::{
       crawl::{CrawlResult, MedusaCrawl},
+      destination::OutputWrapper,
       merge::MedusaMerge,
     };
 
@@ -197,7 +198,7 @@ mod cli {
             parallelism,
           } => {
             /* Initialize output stream. */
-            let output_zip = output.initialize().await?;
+            let output_zip = OutputWrapper::wrap(output.initialize().await?);
 
             /* Read json serialization from stdin. */
             let mut input_json: Vec<u8> = Vec::new();
@@ -218,7 +219,7 @@ mod cli {
             source_zips_by_prefix,
           } => {
             /* Initialize output stream. */
-            let output_zip = output.initialize().await?;
+            let output_zip = OutputWrapper::wrap(output.initialize().await?);
 
             let merge_spec = MedusaMerge::parse_from_args(source_zips_by_prefix.iter())?;
             /* Copy over constituent zips into current. */
@@ -233,7 +234,7 @@ mod cli {
             parallelism,
           } => {
             /* Initialize output stream. */
-            let output_zip = output.initialize().await?;
+            let output_zip = OutputWrapper::wrap(output.initialize().await?);
 
             let crawl: MedusaCrawl = crawl.into();
             /* Perform the actual crawl, traversing the filesystem in the process. */
@@ -254,7 +255,7 @@ mod cli {
             source_zips_by_prefix,
           } => {
             /* Initialize output stream. */
-            let output_zip = output.initialize().await?;
+            let output_zip = OutputWrapper::wrap(output.initialize().await?);
 
             /* Read json serialization from stdin. */
             let mut input_json: Vec<u8> = Vec::new();
@@ -283,7 +284,7 @@ mod cli {
             source_zips_by_prefix,
           } => {
             /* Initialize output stream. */
-            let output_zip = output.initialize().await?;
+            let output_zip = OutputWrapper::wrap(output.initialize().await?);
 
             let crawl: MedusaCrawl = crawl.into();
             let crawl_result = crawl.crawl_paths().await?;
