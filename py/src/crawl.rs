@@ -8,6 +8,7 @@
  */
 
 //! ???
+use libmedusa_zip::crawl::{CrawlResult, MedusaCrawl, ResolvedPath};
 
 use pyo3::prelude::*;
 
