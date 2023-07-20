@@ -1,23 +1,22 @@
 medusa-zip
 ==========
 
-A library/binary for parallel zip creation. See discussion in https://github.com/pantsbuild/pex/issues/2158.
+High-performance parallelized implementations of common zip file operations.
 
-# TODO
-*Iterations:*
-1. [ ] Write out all paths into their own zip files in a temp dir, then use `raw_copy_file()` to copy over their contents into the final zip.
-2. [ ] Hack the `zip` library (changes may not be necessary?) to enable creation of intermediate `ZipFile` objects in memory.
-    - See `raw_copy_file_rename()` and `finish_file()` methods.
-    - Should be able to use `io::Cursor::new(Vec::new())` to create in-memory zip streams.
+*See discussion in https://github.com/pantsbuild/pex/issues/2158.*
 
-## Optimizations
-1. [ ] Use `mmap` or something else to page to disk if the intermediate `ZipFile` objects get too large.
-2. [ ] See whether sections of a zip file spanning multiple file entries can be copied over with memcpy or something else with low overhead. If so, try splitting up the sorted list of file paths into chunks, creating an intermediate zip for each chunk, then copying over the contents of each chunked zip with that bulk copy method.
-3. [ ] See whether zip files can be created without sorting the entries somehow.
-    - It seems like `zipimport` will convert module paths to file names and scan the zip directly, so as long as it unzips properly with `zipfile`, we should be good (?)!
+# Crimes
+
+This crate adds some hacks to the widely-used `zip` crate (see the diff at https://github.com/zip-rs/zip/compare/master...cosmicexplorer:zip:merge-entries?expand=1). When the `merge` feature is provided to this fork of `zip`, two crimes are unveiled:
+1. [`merge_archive()`](https://github.com/cosmicexplorer/zip/blob/94c21b77b21db4133a210f335e0671f4ea85d6a0/src/write.rs#L483-L508):
+    - This will copy over the contents of another zip file into the current one without deserializing any data.
+    - **This enables parallelization of arbitrary zip commands, as multiple zip files can be created in parallel and then merged afterwards.**
+2. [`finish_into_readable()`](https://github.com/cosmicexplorer/zip/blob/94c21b77b21db4133a210f335e0671f4ea85d6a0/src/write.rs#L327-L340):
+    - Creating a writable `ZipWriter` and then converting it into a readable `ZipArchive` is a very common operation when merging zip files.
+    - This likely has zero performance benefit, but it is a good example of the types of investigations you can do with the zip format, especially against the well-written `zip` crate.
 
 ## Compatibility
-We mainly need compatibility with [`zipfile`](https://docs.python.org/3/library/zipfile.html) and [`zipimport`](https://docs.python.org/3/library/zipimport.html) (see https://github.com/pantsbuild/pex/issues/2158#issuecomment-1599348047). Also see [the `zipimport` PEP](https://peps.python.org/pep-0273/).
+We mainly need compatibility with [`zipfile`](https://docs.python.org/3/library/zipfile.html) and [`zipimport`](https://docs.python.org/3/library/zipimport.html) (see https://github.com/pantsbuild/pex/issues/2158#issuecomment-1599348047). Also see [the `zipimport` PEP](https://peps.python.org/pep-0273/). **I currently believe that this program's output will work perfectly against `zipfile` and `zipimport`.**
 
 # License
 [Apache v2](./LICENSE).

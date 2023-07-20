@@ -1,10 +1,15 @@
 [package]
 name                    = "libmedusa-zip"
-version                 = "0.0.0"
-authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
-edition                 = "2021"
+version.workspace       = true
+authors.workspace       = true
+edition.workspace       = true
+rust-version            = "1.70"
+license.workspace       = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+keywords.workspace      = true
+categories.workspace    = true
+homepage.workspace      = true
+repository.workspace    = true
 
 [dependencies]
 async-recursion         = "1"
@@ -27,3 +32,8 @@ zip                     = { workspace = true }
 
 # [dev-dependencies]
 # proptest                = "1"
+
+# Use nicer docs features for docs.rs. See https://users.rust-lang.org/t/how-to-test-a-package-metadata-docs-rs-setting/53818.
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
