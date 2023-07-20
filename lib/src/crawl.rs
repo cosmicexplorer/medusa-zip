@@ -375,6 +375,7 @@ impl MedusaCrawl {
       paths_to_crawl,
       ignores,
     } = self;
+    let cwd = env::current_dir()?;
 
     let results: Vec<CrawlResult> = try_join_all(
       paths_to_crawl
@@ -384,7 +385,6 @@ impl MedusaCrawl {
     .await?;
     let mut result = CrawlResult::merge(results);
 
-    let cwd = env::current_dir()?;
     result.clean_up_for_export(&cwd);
 
     Ok(result)

@@ -11,7 +11,11 @@
 
 use libmedusa_zip::crawl as lib_crawl;
 
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyList};
+use pyo3::{
+  exceptions::{PyException, PyValueError},
+  prelude::*,
+  types::PyList,
+};
 use regex::RegexSet;
 
 use std::path::PathBuf;
@@ -118,6 +122,7 @@ impl Ignores {
       })
       .transpose()?
       .unwrap_or_default();
+    /* TODO: better error! */
     let patterns = RegexSet::new(patterns).map_err(|e| PyValueError::new_err(format!("{}", e)))?;
     Ok(Self { patterns })
   }
@@ -156,6 +161,19 @@ impl MedusaCrawl {
       "MedusaCrawl(paths_to_crawl={:?}, ignores={})",
       &self.paths_to_crawl, ignores
     )
+  }
+
+  fn crawl_paths<'a>(&self, py: Python<'a>) -> PyResult<&'a PyAny> {
+    let crawl: lib_crawl::MedusaCrawl = self.clone().into();
+    pyo3_asyncio::tokio::future_into_py(py, async move {
+      let ret: PyResult<CrawlResult> = crawl
+        .crawl_paths()
+        .await
+        /* TODO: better error! */
+        .map_err(|e| PyException::new_err(format!("{}", e)))
+        .map(|cr| cr.into());
+      ret
+    })
   }
 }
 
