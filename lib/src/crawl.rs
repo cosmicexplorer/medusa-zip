@@ -164,7 +164,7 @@ impl CrawlResult {
 
 #[derive(Clone, Default, Debug)]
 pub struct Ignores {
-  patterns: RegexSet,
+  pub patterns: RegexSet,
 }
 
 impl Ignores {

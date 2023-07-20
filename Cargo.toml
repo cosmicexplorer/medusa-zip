@@ -15,6 +15,7 @@ resolver = "2"
 # FIXME: remove this or at least make it an optional dep for the lib.
 clap                    = { version = "4", features = ["derive"] }
 displaydoc              = "0.2.4"
+regex                   = "1"
 thiserror               = "1.0.30"
 zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "869ebd491327a62344b24f0b4ce3686ba42d53cd", features = ["rayon", "merge"] }
 # zip                     = { path = "/home/cosmicexplorer/tools/zip", features = ["rayon", "merge"] }

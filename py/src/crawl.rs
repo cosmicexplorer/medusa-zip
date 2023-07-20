@@ -8,16 +8,177 @@
  */
 
 //! ???
-use libmedusa_zip::crawl::{CrawlResult, MedusaCrawl, ResolvedPath};
 
-use pyo3::prelude::*;
+use libmedusa_zip::crawl as lib_crawl;
 
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyList};
+use regex::RegexSet;
 
-#[pyfunction]
-fn func() -> String { "func".to_string() }
+use std::path::PathBuf;
+
+#[pyclass]
+#[derive(Clone)]
+struct ResolvedPath {
+  pub unresolved_path: PathBuf,
+  pub resolved_path: PathBuf,
+}
+
+#[pymethods]
+impl ResolvedPath {
+  #[new]
+  #[pyo3(signature = (*, unresolved_path, resolved_path))]
+  fn new(unresolved_path: PathBuf, resolved_path: PathBuf) -> Self {
+    Self {
+      unresolved_path,
+      resolved_path,
+    }
+  }
+
+  /* See https://pyo3.rs/v0.19.1/class/object for more info. */
+  fn __repr__(&self) -> String {
+    format!(
+      "ResolvedPath(unresolved_path={:?}, resolved_path={:?})",
+      &self.unresolved_path, &self.resolved_path
+    )
+  }
+}
+
+impl From<ResolvedPath> for lib_crawl::ResolvedPath {
+  fn from(x: ResolvedPath) -> Self {
+    let ResolvedPath {
+      unresolved_path,
+      resolved_path,
+    } = x;
+    Self {
+      unresolved_path,
+      resolved_path,
+    }
+  }
+}
+
+impl From<lib_crawl::ResolvedPath> for ResolvedPath {
+  fn from(x: lib_crawl::ResolvedPath) -> Self {
+    let lib_crawl::ResolvedPath {
+      unresolved_path,
+      resolved_path,
+    } = x;
+    Self {
+      unresolved_path,
+      resolved_path,
+    }
+  }
+}
+
+#[pyclass]
+#[derive(Clone)]
+struct CrawlResult {
+  pub real_file_paths: Vec<ResolvedPath>,
+}
+
+#[pymethods]
+impl CrawlResult {
+  #[new]
+  fn new(real_file_paths: &PyList) -> PyResult<Self> {
+    let real_file_paths: Vec<ResolvedPath> = real_file_paths.extract()?;
+    Ok(Self { real_file_paths })
+  }
+
+  fn __repr__(&self, py: Python<'_>) -> String {
+    let real_file_paths = self.real_file_paths.clone().into_py(py);
+    format!("CrawlResult(real_file_paths={})", real_file_paths)
+  }
+}
+
+impl From<lib_crawl::CrawlResult> for CrawlResult {
+  fn from(x: lib_crawl::CrawlResult) -> Self {
+    let lib_crawl::CrawlResult { real_file_paths } = x;
+    Self {
+      real_file_paths: real_file_paths
+        .into_iter()
+        .map(ResolvedPath::from)
+        .collect(),
+    }
+  }
+}
+
+#[pyclass]
+#[derive(Clone)]
+struct Ignores {
+  pub patterns: RegexSet,
+}
+
+#[pymethods]
+impl Ignores {
+  #[new]
+  fn new(patterns: Option<&PyList>) -> PyResult<Self> {
+    let patterns: Vec<&str> = patterns
+      .map(|list| {
+        let ret: Vec<&str> = list.extract()?;
+        Ok::<_, PyErr>(ret)
+      })
+      .transpose()?
+      .unwrap_or_default();
+    let patterns = RegexSet::new(patterns).map_err(|e| PyValueError::new_err(format!("{}", e)))?;
+    Ok(Self { patterns })
+  }
+
+  fn __repr__(&self) -> String { format!("Ignores(patterns={:?})", self.patterns.patterns()) }
+}
+
+impl From<Ignores> for lib_crawl::Ignores {
+  fn from(x: Ignores) -> Self {
+    let Ignores { patterns } = x;
+    Self { patterns }
+  }
+}
+
+#[pyclass]
+#[derive(Clone)]
+struct MedusaCrawl {
+  pub paths_to_crawl: Vec<PathBuf>,
+  pub ignores: Ignores,
+}
+
+#[pymethods]
+impl MedusaCrawl {
+  #[new]
+  fn new(paths_to_crawl: &PyList, ignores: Ignores) -> PyResult<Self> {
+    let paths_to_crawl: Vec<PathBuf> = paths_to_crawl.extract()?;
+    Ok(Self {
+      paths_to_crawl,
+      ignores,
+    })
+  }
+
+  fn __repr__(&self, py: Python<'_>) -> String {
+    let ignores = self.ignores.clone().into_py(py);
+    format!(
+      "MedusaCrawl(paths_to_crawl={:?}, ignores={})",
+      &self.paths_to_crawl, ignores
+    )
+  }
+}
+
+impl From<MedusaCrawl> for lib_crawl::MedusaCrawl {
+  fn from(x: MedusaCrawl) -> Self {
+    let MedusaCrawl {
+      paths_to_crawl,
+      ignores,
+    } = x;
+    Self {
+      paths_to_crawl,
+      ignores: ignores.into(),
+    }
+  }
+}
 
 pub(crate) fn crawl_module(py: Python<'_>) -> PyResult<&PyModule> {
   let crawl = PyModule::new(py, "crawl")?;
-  crawl.add_function(wrap_pyfunction!(func, crawl)?)?;
+
+  crawl.add_class::<ResolvedPath>()?;
+  crawl.add_class::<CrawlResult>()?;
+  crawl.add_class::<Ignores>()?;
+  crawl.add_class::<MedusaCrawl>()?;
+
   Ok(crawl)
 }
