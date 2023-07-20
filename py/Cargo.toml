@@ -1,0 +1,26 @@
+[package]
+name = "pymedusa-zip"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+keywords.workspace = true
+categories.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+
+[lib]
+name = "pymedusa_zip"
+crate-type = ["cdylib", "rlib"]
+
+
+[dependencies]
+pyo3 = { version = "0.19.1", features = ["extension-module"] }
+
+
+# Use nicer docs features for docs.rs. See https://users.rust-lang.org/t/how-to-test-a-package-metadata-docs-rs-setting/53818.
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

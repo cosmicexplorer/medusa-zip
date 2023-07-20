@@ -1,9 +1,9 @@
 [package]
 name                    = "libmedusa-zip"
+rust-version            = "1.70"
 version.workspace       = true
 authors.workspace       = true
 edition.workspace       = true
-rust-version            = "1.70"
 license.workspace       = true
 
 keywords.workspace      = true

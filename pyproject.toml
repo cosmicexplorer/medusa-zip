@@ -3,12 +3,12 @@ name = "medusa-zip"
 version = "0.0.0"
 description = "High-performance parallelized implementations of common zip file operations."
 license = {text = "Apache-2.0"}
-readme = "README.md"
+readme = "py/README.md"
 requires-python = ">=3.5"
 authors = [
   {name = "Danny McClanahan", email = "dmcC2@hypnicjerk.ai"},
 ]
-keywords = ["zip", "rust", "fs", "file", "archive", "parallel", "exe"]
+keywords = ["zip", "rust", "fs", "file", "archive", "parallel", "pyo3"]
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Intended Audience :: Developers",
@@ -36,8 +36,8 @@ Repository = "https://github.com/cosmicexplorer/medusa-zip"
 "Bug Tracker" = "https://github.com/cosmicexplorer/medusa-zip/issues"
 
 [tool.setuptools]
-zip-safe = false
-# packages = ["medusa_zip"]
+package-dir = {"" = "py"}
+packages = ["medusa_zip"]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel", "setuptools-rust>=0.12.1"]

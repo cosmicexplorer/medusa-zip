@@ -1,37 +1,18 @@
-[package]
-name                    = "medusa-zip"
-version.workspace       = true
-authors.workspace       = true
-edition.workspace       = true
-license.workspace       = true
-
-keywords.workspace      = true
-categories.workspace    = true
-homepage.workspace      = true
-repository.workspace    = true
-
-[dependencies]
-clap                    = { workspace = true }
-displaydoc              = { workspace = true }
-eyre                    = "0.6.8"
-libmedusa-zip           = { path = "./libmedusa-zip" }
-regex                   = "1"
-serde_json              = "1.0"
-thiserror               = { workspace = true }
-tokio                   = { version = "1.29.1", features = ["io-util", "io-std", "macros", "rt-multi-thread"] }
-zip                     = { workspace = true }
-
 [workspace]
 members                 = [
-    ".",
-    "./libmedusa-zip",
+    "./lib",
+    "./py",
+    "./cli",
 ]
 default-members         = [
-    ".",
-    "./libmedusa-zip",
+    "./lib",
+    "./py",
+    "./cli",
 ]
+resolver = "2"
 
 [workspace.dependencies]
+# FIXME: remove this or at least make it an optional dep for the lib.
 clap                    = { version = "4", features = ["derive"] }
 displaydoc              = "0.2.4"
 thiserror               = "1.0.30"
@@ -44,15 +25,10 @@ authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 edition                 = "2021"
 license                 = "Apache-2.0"
 
-keywords                = ["zip", "file", "archive", "parallel", "bin"]
+keywords                = ["zip", "file", "archive", "parallel", "i/o"]
 categories              = ["development-tools::build-utils", "filesystem", "asynchronous", "caching", "command-line-utilities"]
 homepage                = "https://github.com/cosmicexplorer/medusa-zip"
 repository              = "https://github.com/cosmicexplorer/medusa-zip"
-
-# Use nicer docs features for docs.rs. See https://users.rust-lang.org/t/how-to-test-a-package-metadata-docs-rs-setting/53818.
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
 
 [profile.release]
 strip = true
