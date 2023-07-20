@@ -17,6 +17,7 @@ crate-type = ["cdylib", "rlib"]
 
 
 [dependencies]
+libmedusa-zip = { path = "../lib" }
 pyo3 = { version = "0.19.1", features = ["extension-module"] }
 
 

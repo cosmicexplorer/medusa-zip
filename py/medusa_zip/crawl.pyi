@@ -5,4 +5,5 @@
 #
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-from pymedusa_zip.pymedusa_zip import *
+def func() -> str:
+    ...

@@ -894,6 +894,7 @@ dependencies = [
 name = "pymedusa-zip"
 version = "0.0.0"
 dependencies = [
+ "libmedusa-zip",
  "pyo3",
 ]
 
