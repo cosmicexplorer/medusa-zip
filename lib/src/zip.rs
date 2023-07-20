@@ -49,7 +49,7 @@ use zip::{
 use std::os::unix::fs::PermissionsExt;
 use std::{
   cmp,
-  convert::TryInto,
+  convert::{TryFrom, TryInto},
   io::{Seek, Write},
   mem, num, ops,
   path::{Path, PathBuf},
@@ -69,8 +69,6 @@ pub enum MedusaZipError {
   InputConsistency(#[from] InputConsistencyError),
   /// error reading input file: {0}
   InputRead(#[from] MedusaInputReadError),
-  /// error parsing zip output options: {0}
-  ParseZipOptions(#[from] ParseCompressionOptionsError),
   /// error processing zip file entry options: {0}
   ProcessZipOptions(#[from] InitializeZipOptionsError),
   /// error receiving from a oneshot channel: {0}
@@ -155,41 +153,6 @@ static CURRENT_ZIP_TIME: Lazy<ZipDateTime> = Lazy::new(|| {
     .expect("failed to convert local time into zip time at startup")
 });
 
-impl DefaultInitializeZipOptions for AutomaticModifiedTimeStrategy {
-  #[must_use]
-  fn set_zip_options_static(&self, options: ZipLibraryFileOptions) -> ZipLibraryFileOptions {
-    match self {
-      Self::Reproducible => options.last_modified_time(MINIMUM_ZIP_TIME),
-      Self::CurrentTime => options.last_modified_time(*CURRENT_ZIP_TIME),
-      Self::PreserveSourceTime => Self::CurrentTime.set_zip_options_static(options),
-    }
-  }
-}
-
-impl InitializeZipOptionsForSpecificFile for AutomaticModifiedTimeStrategy {
-  #[must_use]
-  fn set_zip_options_for_file(
-    &self,
-    options: ZipLibraryFileOptions,
-    metadata: &std::fs::Metadata,
-  ) -> Result<ZipLibraryFileOptions, InitializeZipOptionsError> {
-    match self {
-      Self::Reproducible => Ok(options.last_modified_time(MINIMUM_ZIP_TIME)),
-      Self::CurrentTime => Ok(options.last_modified_time(*CURRENT_ZIP_TIME)),
-      Self::PreserveSourceTime => {
-        /* NB: this is not blocking, but will Err on platforms without this available
-         * (the docs don't specify which platforms:
-         * https://doc.rust-lang.org/nightly/std/fs/struct.Metadata.html#method.modified). */
-        let modified_time = metadata.modified()?;
-        let modified_time: ZipDateTime = OffsetDateTime::from(modified_time)
-          .to_offset(*LOCAL_UTC_OFFSET)
-          .try_into()?;
-        Ok(options.last_modified_time(modified_time))
-      },
-    }
-  }
-}
-
 #[derive(Copy, Clone, Debug)]
 pub struct ZipDateTimeWrapper(pub ZipDateTime);
 
@@ -237,7 +200,7 @@ impl ValueParserFactory for ZipDateTimeWrapper {
 }
 
 #[derive(Copy, Clone, Debug, Default, Args)]
-pub struct ModifiedTimeBehavior {
+pub struct ModifiedTimeBehaviorArgs {
   /// Assign timestamps to the entries of the output zip file according to some
   /// formula.
   #[arg(
@@ -246,7 +209,7 @@ pub struct ModifiedTimeBehavior {
     long,
     conflicts_with = "explicit_mtime_timestamp"
   )]
-  automatic_mtime_strategy: AutomaticModifiedTimeStrategy,
+  pub automatic_mtime_strategy: AutomaticModifiedTimeStrategy,
   /// Assign a single [RFC 3339] timestamp such as '1985-04-12T23:20:50.52Z' to
   /// every file and directory.
   ///
@@ -256,21 +219,33 @@ pub struct ModifiedTimeBehavior {
   ///
   /// [RFC 3339]: https://datatracker.ietf.org/doc/html/rfc3339#section-5.6
   #[arg(long, default_value = None)]
-  explicit_mtime_timestamp: Option<ZipDateTimeWrapper>,
+  pub explicit_mtime_timestamp: Option<ZipDateTimeWrapper>,
 }
 
-impl ModifiedTimeBehavior {
-  pub fn automatic(automatic_mtime_strategy: AutomaticModifiedTimeStrategy) -> Self {
-    Self {
-      automatic_mtime_strategy,
-      ..Default::default()
-    }
-  }
+/* FIXME: establish one canonical place (probably the CLI help?) where the
+ * definition of these repeated enum cases are specified. */
+#[derive(Copy, Clone, Default, Debug)]
+pub enum ModifiedTimeBehavior {
+  #[default]
+  Reproducible,
+  CurrentTime,
+  PreserveSourceTime,
+  Explicit(ZipDateTime),
+}
 
-  pub fn explicit(explicit_mtime_timestamp: ZipDateTime) -> Self {
-    Self {
-      explicit_mtime_timestamp: Some(ZipDateTimeWrapper(explicit_mtime_timestamp)),
-      ..Default::default()
+impl From<ModifiedTimeBehaviorArgs> for ModifiedTimeBehavior {
+  fn from(x: ModifiedTimeBehaviorArgs) -> Self {
+    let ModifiedTimeBehaviorArgs {
+      automatic_mtime_strategy,
+      explicit_mtime_timestamp,
+    } = x;
+    match explicit_mtime_timestamp {
+      Some(ZipDateTimeWrapper(timestamp)) => Self::Explicit(timestamp),
+      None => match automatic_mtime_strategy {
+        AutomaticModifiedTimeStrategy::Reproducible => Self::Reproducible,
+        AutomaticModifiedTimeStrategy::CurrentTime => Self::CurrentTime,
+        AutomaticModifiedTimeStrategy::PreserveSourceTime => Self::PreserveSourceTime,
+      },
     }
   }
 }
@@ -278,13 +253,11 @@ impl ModifiedTimeBehavior {
 impl DefaultInitializeZipOptions for ModifiedTimeBehavior {
   #[must_use]
   fn set_zip_options_static(&self, options: ZipLibraryFileOptions) -> ZipLibraryFileOptions {
-    let Self {
-      automatic_mtime_strategy,
-      explicit_mtime_timestamp,
-    } = self;
-    match explicit_mtime_timestamp {
-      None => automatic_mtime_strategy.set_zip_options_static(options),
-      Some(ZipDateTimeWrapper(timestamp)) => options.last_modified_time(*timestamp),
+    match self {
+      Self::Reproducible => options.last_modified_time(MINIMUM_ZIP_TIME),
+      Self::CurrentTime => options.last_modified_time(*CURRENT_ZIP_TIME),
+      Self::PreserveSourceTime => Self::CurrentTime.set_zip_options_static(options),
+      Self::Explicit(timestamp) => options.last_modified_time(*timestamp),
     }
   }
 }
@@ -296,13 +269,20 @@ impl InitializeZipOptionsForSpecificFile for ModifiedTimeBehavior {
     options: ZipLibraryFileOptions,
     metadata: &std::fs::Metadata,
   ) -> Result<ZipLibraryFileOptions, InitializeZipOptionsError> {
-    let Self {
-      automatic_mtime_strategy,
-      explicit_mtime_timestamp,
-    } = self;
-    match explicit_mtime_timestamp {
-      None => automatic_mtime_strategy.set_zip_options_for_file(options, metadata),
-      Some(ZipDateTimeWrapper(timestamp)) => Ok(options.last_modified_time(*timestamp)),
+    match self {
+      Self::Reproducible => Ok(options.last_modified_time(MINIMUM_ZIP_TIME)),
+      Self::CurrentTime => Ok(options.last_modified_time(*CURRENT_ZIP_TIME)),
+      Self::PreserveSourceTime => {
+        /* NB: this is not blocking, but will Err on platforms without this available
+         * (the docs don't specify which platforms:
+         * https://doc.rust-lang.org/nightly/std/fs/struct.Metadata.html#method.modified). */
+        let modified_time = metadata.modified()?;
+        let modified_time: ZipDateTime = OffsetDateTime::from(modified_time)
+          .to_offset(*LOCAL_UTC_OFFSET)
+          .try_into()?;
+        Ok(options.last_modified_time(modified_time))
+      },
+      Self::Explicit(timestamp) => Ok(options.last_modified_time(*timestamp)),
     }
   }
 }
@@ -411,11 +391,16 @@ pub enum ParseCompressionOptionsError {
   TryFromInt(#[from] num::TryFromIntError),
 }
 
-enum CompressionStrategy {
+#[derive(Copy, Clone, Debug)]
+pub enum CompressionStrategy {
   Stored,
   Deflated(Option<u8>),
   Bzip2(Option<u8>),
   Zstd(Option<i8>),
+}
+
+impl Default for CompressionStrategy {
+  fn default() -> Self { Self::Deflated(Some(6)) }
 }
 
 impl CompressionStrategy {
@@ -512,11 +497,34 @@ impl DefaultInitializeZipOptions for CompressionStrategy {
 }
 
 #[derive(Copy, Clone, Default, Debug, Args)]
-pub struct ZipOutputOptions {
+pub struct ZipOutputOptionsArgs {
   #[command(flatten)]
-  pub mtime_behavior: ModifiedTimeBehavior,
+  pub mtime_behavior: ModifiedTimeBehaviorArgs,
   #[command(flatten)]
   pub compression_options: CompressionOptions,
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+pub struct ZipOutputOptions {
+  pub mtime_behavior: ModifiedTimeBehavior,
+  pub compression_options: CompressionStrategy,
+}
+
+impl TryFrom<ZipOutputOptionsArgs> for ZipOutputOptions {
+  type Error = ParseCompressionOptionsError;
+
+  fn try_from(x: ZipOutputOptionsArgs) -> Result<Self, Self::Error> {
+    let ZipOutputOptionsArgs {
+      mtime_behavior,
+      compression_options,
+    } = x;
+    let mtime_behavior: ModifiedTimeBehavior = mtime_behavior.into();
+    let compression_options = CompressionStrategy::from_options(compression_options)?;
+    Ok(Self {
+      mtime_behavior,
+      compression_options,
+    })
+  }
 }
 
 #[derive(Clone, Default, Debug, Args)]
@@ -1009,7 +1017,6 @@ impl MedusaZip {
       modifications,
       parallelism,
     } = self;
-    let compression_options = CompressionStrategy::from_options(compression_options)?;
 
     let EntrySpecificationList(entries) = task::spawn_blocking(move || {
       EntrySpecificationList::from_file_specs(input_files, modifications)

@@ -51,7 +51,7 @@ mod cli {
     use libmedusa_zip::{
       crawl::MedusaCrawlArgs,
       destination::DestinationBehavior,
-      zip::{EntryModifications, ModifiedTimeBehavior, Parallelism, ZipOutputOptions},
+      zip::{EntryModifications, ModifiedTimeBehaviorArgs, Parallelism, ZipOutputOptionsArgs},
     };
 
     use clap::{Args, Parser, Subcommand};
@@ -82,7 +82,7 @@ mod cli {
         #[command(flatten)]
         output: Output,
         #[command(flatten)]
-        zip_options: ZipOutputOptions,
+        zip_options: ZipOutputOptionsArgs,
         #[command(flatten)]
         modifications: EntryModifications,
         #[arg(long, value_enum, default_value_t)]
@@ -94,7 +94,7 @@ mod cli {
         output: Output,
         /// ???
         #[command(flatten)]
-        mtime_behavior: ModifiedTimeBehavior,
+        mtime_behavior: ModifiedTimeBehaviorArgs,
         /// ???
         #[arg()]
         source_zips_by_prefix: Vec<String>,
@@ -106,7 +106,7 @@ mod cli {
         #[command(flatten)]
         output: Output,
         #[command(flatten)]
-        zip_options: ZipOutputOptions,
+        zip_options: ZipOutputOptionsArgs,
         #[command(flatten)]
         modifications: EntryModifications,
         #[arg(long, value_enum, default_value_t)]
@@ -118,7 +118,7 @@ mod cli {
         #[command(flatten)]
         output: Output,
         #[command(flatten)]
-        zip_options: ZipOutputOptions,
+        zip_options: ZipOutputOptionsArgs,
         #[command(flatten)]
         modifications: EntryModifications,
         #[arg(long, value_enum, default_value_t)]
@@ -134,7 +134,7 @@ mod cli {
         #[command(flatten)]
         output: Output,
         #[command(flatten)]
-        zip_options: ZipOutputOptions,
+        zip_options: ZipOutputOptionsArgs,
         #[command(flatten)]
         modifications: EntryModifications,
         #[arg(long, value_enum, default_value_t)]
@@ -167,6 +167,8 @@ mod cli {
     use serde_json;
     use tokio::io::{self, AsyncReadExt};
     use zip::write::ZipWriter;
+
+    use std::convert::TryInto;
 
     impl Output {
       pub async fn initialize(self) -> eyre::Result<ZipWriter<std::fs::File>> {
@@ -207,7 +209,8 @@ mod cli {
             let crawl_result: CrawlResult = serde_json::from_slice(&input_json)?;
 
             /* Apply options from command line to produce a zip spec. */
-            let crawled_zip = crawl_result.medusa_zip(zip_options, modifications, parallelism)?;
+            let crawled_zip =
+              crawl_result.medusa_zip(zip_options.try_into()?, modifications, parallelism)?;
 
             /* Do the parallel zip!!! */
             /* TODO: log the file output! */
@@ -224,7 +227,7 @@ mod cli {
             let merge_spec = MedusaMerge::parse_from_args(source_zips_by_prefix.iter())?;
             /* Copy over constituent zips into current. */
             /* TODO: log the file output! */
-            let _output_file_handle = merge_spec.merge(mtime_behavior, output_zip).await?;
+            let _output_file_handle = merge_spec.merge(mtime_behavior.into(), output_zip).await?;
           },
           Command::CrawlZip {
             crawl,
@@ -241,7 +244,8 @@ mod cli {
             let crawl_result = crawl.crawl_paths().await?;
 
             /* Apply options from command line to produce a zip spec. */
-            let crawled_zip = crawl_result.medusa_zip(zip_options, modifications, parallelism)?;
+            let crawled_zip =
+              crawl_result.medusa_zip(zip_options.try_into()?, modifications, parallelism)?;
 
             /* Do the parallel zip over the crawled files!!! */
             /* TODO: log the file output! */
@@ -263,7 +267,8 @@ mod cli {
             let crawl_result: CrawlResult = serde_json::from_slice(&input_json)?;
 
             /* Apply options from command line to produce a zip spec. */
-            let crawled_zip = crawl_result.medusa_zip(zip_options, modifications, parallelism)?;
+            let crawled_zip =
+              crawl_result.medusa_zip(zip_options.try_into()?, modifications, parallelism)?;
 
             /* Do the parallel zip!!! */
             let output_zip_file_handle = crawled_zip.zip(output_zip).await?;
@@ -272,7 +277,7 @@ mod cli {
             /* Copy over constituent zips into current. */
             /* TODO: log the file output! */
             let _output_file_handle = merge_spec
-              .merge(zip_options.mtime_behavior, output_zip_file_handle)
+              .merge(zip_options.mtime_behavior.into(), output_zip_file_handle)
               .await?;
           },
           Command::CrawlZipMerge {
@@ -290,7 +295,8 @@ mod cli {
             let crawl_result = crawl.crawl_paths().await?;
 
             /* Apply options from command line to produce a zip spec. */
-            let crawled_zip = crawl_result.medusa_zip(zip_options, modifications, parallelism)?;
+            let crawled_zip =
+              crawl_result.medusa_zip(zip_options.try_into()?, modifications, parallelism)?;
 
             /* Do the parallel zip!!! */
             let output_zip_file_handle = crawled_zip.zip(output_zip).await?;
@@ -299,7 +305,7 @@ mod cli {
             /* Copy over constituent zips into current. */
             /* TODO: log the file output! */
             let _output_file_handle = merge_spec
-              .merge(zip_options.mtime_behavior, output_zip_file_handle)
+              .merge(zip_options.mtime_behavior.into(), output_zip_file_handle)
               .await?;
           },
         }

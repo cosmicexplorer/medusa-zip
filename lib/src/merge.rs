@@ -73,6 +73,8 @@ impl MedusaMerge {
     args: impl Iterator<Item=R>,
   ) -> Result<Self, MergeArgParseError> {
     let mut ret: Vec<MergeGroup> = Vec::new();
+    /* Each prefix is itself legitimately an Option (to avoid EntryName being
+     * empty), so we wrap it again. */
     let mut current_prefix: Option<Option<EntryName>> = None;
     let mut current_sources: Vec<PathBuf> = Vec::new();
     for arg in args {
