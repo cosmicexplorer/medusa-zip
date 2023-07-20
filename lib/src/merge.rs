@@ -123,6 +123,7 @@ impl MedusaMerge {
     let Self { groups } = self;
     let zip_options = mtime_behavior.set_zip_options_static(ZipLibraryFileOptions::default());
 
+    /* This shouldn't really need to be bounded at all, since the task is entirely synchronous. */
     let (handle_tx, handle_rx) = mpsc::channel::<IntermediateMergeEntry>(PARALLEL_MERGE_ENTRIES);
     let mut handle_jobs = ReceiverStream::new(handle_rx);
     let handle_stream_task = task::spawn(async move {
