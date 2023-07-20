@@ -72,6 +72,7 @@ pub(crate) fn destination_module(py: Python<'_>) -> PyResult<&PyModule> {
   let destination = PyModule::new(py, "destination")?;
 
   destination.add_class::<DestinationBehavior>()?;
+  destination.add_class::<ZipFileWriter>()?;
 
   Ok(destination)
 }

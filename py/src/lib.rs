@@ -131,6 +131,8 @@ fn pymedusa_zip(py: Python<'_>, medusa_zip: &PyModule) -> PyResult<()> {
   add_submodule(medusa_zip, py, merge)?;
   let destination = destination::destination_module(py)?;
   add_submodule(medusa_zip, py, destination)?;
+  let zip = zip::zip_module(py)?;
+  add_submodule(medusa_zip, py, zip)?;
 
   medusa_zip.add_class::<EntryName>()?;
   medusa_zip.add_class::<FileSource>()?;

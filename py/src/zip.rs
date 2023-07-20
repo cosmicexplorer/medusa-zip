@@ -25,3 +25,13 @@ impl From<lib_zip::ModifiedTimeBehavior> for ModifiedTimeBehavior {
 impl From<ModifiedTimeBehavior> for lib_zip::ModifiedTimeBehavior {
   fn from(x: ModifiedTimeBehavior) -> Self {}
 }
+
+
+
+pub(crate) fn zip_module(py: Python<'_>) -> PyResult<&PyModule> {
+  let zip = PyModule::new(py, "zip")?;
+
+  zip.add_class::<ModifiedTimeBehavior>()?;
+
+  Ok(zip)
+}

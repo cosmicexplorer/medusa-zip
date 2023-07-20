@@ -17,13 +17,10 @@ use pyo3::{
   exceptions::{PyException, PyValueError},
   intern,
   prelude::*,
-  types::PyList,
 };
-use zip::write::ZipWriter;
 
 use std::{
   convert::{TryFrom, TryInto},
-  fs::File,
   path::PathBuf,
 };
 
