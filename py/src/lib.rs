@@ -49,6 +49,7 @@
 use pyo3::prelude::*;
 
 mod crawl;
+mod merge;
 
 fn add_submodule(parent: &PyModule, py: Python<'_>, child: &PyModule) -> PyResult<()> {
   parent.add_submodule(child)?;
@@ -65,5 +66,7 @@ fn add_submodule(parent: &PyModule, py: Python<'_>, child: &PyModule) -> PyResul
 fn pymedusa_zip(py: Python<'_>, m: &PyModule) -> PyResult<()> {
   let crawl = crawl::crawl_module(py)?;
   add_submodule(m, py, crawl)?;
+  let merge = merge::merge_module(py)?;
+  add_submodule(m, py, merge)?;
   Ok(())
 }

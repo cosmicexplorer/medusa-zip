@@ -23,7 +23,9 @@ use std::path::PathBuf;
 #[pyclass]
 #[derive(Clone)]
 struct ResolvedPath {
+  #[pyo3(get)]
   pub unresolved_path: PathBuf,
+  #[pyo3(get)]
   pub resolved_path: PathBuf,
 }
 
@@ -76,14 +78,18 @@ impl From<lib_crawl::ResolvedPath> for ResolvedPath {
 #[pyclass]
 #[derive(Clone)]
 struct CrawlResult {
+  #[pyo3(get)]
   pub real_file_paths: Vec<ResolvedPath>,
 }
 
 #[pymethods]
 impl CrawlResult {
   #[new]
-  fn new(real_file_paths: &PyList) -> PyResult<Self> {
-    let real_file_paths: Vec<ResolvedPath> = real_file_paths.extract()?;
+  fn new(py: Python<'_>, real_file_paths: &PyAny) -> PyResult<Self> {
+    let real_file_paths: Vec<ResolvedPath> = real_file_paths
+      .iter()?
+      .map(|rp| rp.and_then(PyAny::extract::<ResolvedPath>))
+      .collect::<PyResult<_>>()?;
     Ok(Self { real_file_paths })
   }
 
@@ -140,7 +146,9 @@ impl From<Ignores> for lib_crawl::Ignores {
 #[pyclass]
 #[derive(Clone)]
 struct MedusaCrawl {
+  #[pyo3(get)]
   pub paths_to_crawl: Vec<PathBuf>,
+  #[pyo3(get)]
   pub ignores: Ignores,
 }
 
