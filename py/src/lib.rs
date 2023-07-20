@@ -53,13 +53,9 @@ use pyo3::{exceptions::PyValueError, intern, prelude::*};
 use std::{convert::TryFrom, path::PathBuf};
 
 
-mod crawl;
-mod merge;
-
-
 #[pyclass]
 #[derive(Clone)]
-struct EntryName(pub String);
+pub struct EntryName(pub String);
 
 #[pymethods]
 impl EntryName {
@@ -91,7 +87,7 @@ impl From<lib::EntryName> for EntryName {
 
 
 #[pyclass]
-struct FileSource {
+pub struct FileSource {
   #[pyo3(get)]
   pub name: EntryName,
   #[pyo3(get)]
@@ -105,7 +101,9 @@ impl FileSource {
 
   fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
     let name = self.name.clone().into_py(py);
-    let name: String = name.call_method0(py, intern!(py, "__repr__"))?.extract(py)?;
+    let name: String = name
+      .call_method0(py, intern!(py, "__repr__"))?
+      .extract(py)?;
     Ok(format!(
       "FileSource(name={}, source={:?})",
       name, &self.source
@@ -131,9 +129,17 @@ fn pymedusa_zip(py: Python<'_>, medusa_zip: &PyModule) -> PyResult<()> {
   add_submodule(medusa_zip, py, crawl)?;
   let merge = merge::merge_module(py)?;
   add_submodule(medusa_zip, py, merge)?;
+  let destination = destination::destination_module(py)?;
+  add_submodule(medusa_zip, py, destination)?;
 
   medusa_zip.add_class::<EntryName>()?;
   medusa_zip.add_class::<FileSource>()?;
 
   Ok(())
 }
+
+
+mod crawl;
+mod destination;
+mod merge;
+mod zip;

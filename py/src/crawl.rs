@@ -23,7 +23,7 @@ use std::path::PathBuf;
 
 #[pyclass]
 #[derive(Clone)]
-struct ResolvedPath {
+pub struct ResolvedPath {
   #[pyo3(get)]
   pub unresolved_path: PathBuf,
   #[pyo3(get)]
@@ -78,7 +78,7 @@ impl From<lib_crawl::ResolvedPath> for ResolvedPath {
 
 #[pyclass]
 #[derive(Clone)]
-struct CrawlResult {
+pub struct CrawlResult {
   #[pyo3(get)]
   pub real_file_paths: Vec<ResolvedPath>,
 }
@@ -114,7 +114,7 @@ impl From<lib_crawl::CrawlResult> for CrawlResult {
 
 #[pyclass]
 #[derive(Clone)]
-struct Ignores {
+pub struct Ignores {
   pub patterns: RegexSet,
 }
 
@@ -146,7 +146,7 @@ impl From<Ignores> for lib_crawl::Ignores {
 
 #[pyclass]
 #[derive(Clone)]
-struct MedusaCrawl {
+pub struct MedusaCrawl {
   #[pyo3(get)]
   pub paths_to_crawl: Vec<PathBuf>,
   #[pyo3(get)]

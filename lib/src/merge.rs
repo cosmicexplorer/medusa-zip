@@ -116,7 +116,7 @@ impl MedusaMerge {
     self,
     mtime_behavior: ModifiedTimeBehavior,
     output_zip: ZipWriter<Output>,
-  ) -> Result<Output, MedusaMergeError>
+  ) -> Result<ZipWriter<Output>, MedusaMergeError>
   where
     Output: Write+Seek+Send+'static,
   {
@@ -186,15 +186,9 @@ impl MedusaMerge {
     }
     handle_stream_task.await??;
 
-    let output_handle = task::spawn_blocking(move || {
-      let mut output_zip = Arc::into_inner(output_zip)
-        .expect("no other references should exist to output_zip")
-        .into_inner();
-      let output_handle = output_zip.finish()?;
-      Ok::<Output, ZipError>(output_handle)
-    })
-    .await??;
-
-    Ok(output_handle)
+    let output_zip = Arc::into_inner(output_zip)
+      .expect("no other references should exist to output_zip")
+      .into_inner();
+    Ok(output_zip)
   }
 }

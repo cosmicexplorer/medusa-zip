@@ -20,7 +20,8 @@ crate-type              = ["cdylib", "rlib"]
 libmedusa-zip           = { path = "../lib" }
 pyo3                    = { version = "0.18", features = ["extension-module"] }
 pyo3-asyncio            = { version = "0.18", features = ["tokio-runtime"] }
-regex                   = { workspace = true }
+regex.workspace         = true
+zip.workspace           = true
 
 # Use nicer docs features for docs.rs. See https://users.rust-lang.org/t/how-to-test-a-package-metadata-docs-rs-setting/53818.
 [package.metadata.docs.rs]

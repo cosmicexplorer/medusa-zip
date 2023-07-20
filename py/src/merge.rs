@@ -9,9 +9,9 @@
 
 //! ???
 
-use crate::EntryName;
+use crate::{destination::ZipFileWriter, zip::ModifiedTimeBehavior, EntryName};
 
-use libmedusa_zip::{self as lib, merge as lib_merge};
+use libmedusa_zip::{self as lib, merge as lib_merge, zip as lib_zip};
 
 use pyo3::{
   exceptions::{PyException, PyValueError},
@@ -19,16 +19,18 @@ use pyo3::{
   prelude::*,
   types::PyList,
 };
+use zip::write::ZipWriter;
 
 use std::{
   convert::{TryFrom, TryInto},
+  fs::File,
   path::PathBuf,
 };
 
 
 #[pyclass]
 #[derive(Clone)]
-struct MergeGroup {
+pub struct MergeGroup {
   #[pyo3(get)]
   pub prefix: Option<EntryName>,
   #[pyo3(get)]
@@ -86,7 +88,7 @@ impl From<lib_merge::MergeGroup> for MergeGroup {
 
 #[pyclass]
 #[derive(Clone)]
-struct MedusaMerge {
+pub struct MedusaMerge {
   #[pyo3(get)]
   pub groups: Vec<MergeGroup>,
 }
@@ -104,6 +106,30 @@ impl MedusaMerge {
       .transpose()?
       .unwrap_or_default();
     Ok(Self { groups })
+  }
+
+  fn merge<'a>(
+    &self,
+    py: Python<'a>,
+    mtime_behavior: ModifiedTimeBehavior,
+    output_zip: ZipFileWriter,
+  ) -> PyResult<&'a PyAny> {
+    let merge: lib_merge::MedusaMerge = self
+      .clone()
+      .try_into()
+      /* TODO: better error! */
+      .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
+    let mtime_behavior: lib_zip::ModifiedTimeBehavior = mtime_behavior.into();
+    let ZipFileWriter(output_zip) = output_zip;
+    pyo3_asyncio::tokio::future_into_py(py, async move {
+      let output_zip = merge
+        .merge(mtime_behavior, output_zip)
+        .await
+        /* TODO: better error! */
+        .map_err(|e| PyException::new_err(format!("{}", e)))?;
+      let output_zip = ZipFileWriter(output_zip);
+      Ok::<_, PyErr>(output_zip)
+    })
   }
 }
 
