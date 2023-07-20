@@ -10,8 +10,9 @@
 //! ???
 
 use crate::{
-  util::clap_handlers, EntryModifications, EntryName, FileSource, MedusaNameFormatError, MedusaZip,
-  Parallelism, ZipOutputOptions,
+  util::clap_handlers,
+  zip::{EntryModifications, MedusaZip, Parallelism, ZipOutputOptions},
+  EntryName, FileSource, MedusaNameFormatError,
 };
 
 use async_recursion::async_recursion;

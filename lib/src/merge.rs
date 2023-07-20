@@ -10,8 +10,8 @@
 //! ???
 
 use crate::{
-  zip::{calculate_new_rightmost_components, DefaultInitializeZipOptions},
-  EntryName, MedusaNameFormatError, ModifiedTimeBehavior,
+  zip::{calculate_new_rightmost_components, DefaultInitializeZipOptions, ModifiedTimeBehavior},
+  EntryName, MedusaNameFormatError,
 };
 
 use displaydoc::Display;

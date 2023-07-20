@@ -182,21 +182,20 @@ impl cmp::Ord for FileSource {
   fn cmp(&self, other: &Self) -> cmp::Ordering { self.name.cmp(&other.name) }
 }
 
-/* FIXME: make these modules public! */
-mod destination;
-pub use destination::{DestinationBehavior, DestinationError};
+pub mod destination;
+/* pub use destination::{DestinationBehavior, DestinationError}; */
 
-mod crawl;
-pub use crawl::{CrawlResult, MedusaCrawl, MedusaCrawlArgs, MedusaCrawlError};
+pub mod crawl;
+/* pub use crawl::{CrawlResult, MedusaCrawl, MedusaCrawlArgs, MedusaCrawlError}; */
 
-mod zip;
-pub use crate::zip::{
-  EntryModifications, MedusaZip, MedusaZipError, ModifiedTimeBehavior, Parallelism,
-  ZipOutputOptions,
-};
+pub mod zip;
+/* pub use crate::zip::{ */
+/*   EntryModifications, MedusaZip, MedusaZipError, ModifiedTimeBehavior, Parallelism, */
+/*   ZipOutputOptions, */
+/* }; */
 
-mod merge;
-pub use merge::{MedusaMerge, MedusaMergeError, MergeArgParseError, MergeGroup};
+pub mod merge;
+/* pub use merge::{MedusaMerge, MedusaMergeError, MergeArgParseError, MergeGroup}; */
 
 mod util;
 

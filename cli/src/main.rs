@@ -49,8 +49,9 @@
 mod cli {
   mod args {
     use libmedusa_zip::{
-      DestinationBehavior, EntryModifications, MedusaCrawlArgs, ModifiedTimeBehavior, Parallelism,
-      ZipOutputOptions,
+      crawl::MedusaCrawlArgs,
+      destination::DestinationBehavior,
+      zip::{EntryModifications, ModifiedTimeBehavior, Parallelism, ZipOutputOptions},
     };
 
     use clap::{Args, Parser, Subcommand};
@@ -157,7 +158,10 @@ mod cli {
   mod run {
     use super::{Cli, Command, Output};
 
-    use libmedusa_zip::{CrawlResult, MedusaCrawl, MedusaMerge};
+    use libmedusa_zip::{
+      crawl::{CrawlResult, MedusaCrawl},
+      merge::MedusaMerge,
+    };
 
     use serde_json;
     use tokio::io::{self, AsyncReadExt};

@@ -10,7 +10,7 @@
 //! ???
 
 #[cfg(doc)]
-use crate::MergeGroup;
+use crate::merge::MergeGroup;
 use crate::{util::clap_handlers, EntryName, FileSource, MedusaNameFormatError};
 
 use cfg_if::cfg_if;
