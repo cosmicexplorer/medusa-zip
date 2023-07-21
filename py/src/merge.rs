@@ -122,7 +122,7 @@ impl MedusaMerge {
       zip_writer,
     } = output_zip;
     pyo3_asyncio::tokio::future_into_py(py, async move {
-      let output_zip = merge
+      let zip_writer = merge
         .merge(mtime_behavior, zip_writer)
         .await
         /* TODO: better error! */

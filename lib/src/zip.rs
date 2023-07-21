@@ -309,6 +309,7 @@ impl InitializeZipOptionsForSpecificFile for PreservePermsBehavior {
   }
 }
 
+/* TODO: make this configurable! */
 const SMALL_FILE_FOR_NO_COMPRESSION_MAX_SIZE: usize = 1_000;
 
 struct SmallFileBehavior;
@@ -537,11 +538,13 @@ pub struct EntryModifications {
   ///
   /// `--silent-external-prefix .deps` => `[.deps/a, .deps/b, ...]`
   #[arg(long, default_value = None)]
+  /* FIXME: make these both EntryName (also, parse EntryName at clap validation time)! */
   pub silent_external_prefix: Option<String>,
   /// This prefixes a directory path to every entry, but this *will* create
   /// parent directory entries in the output file.
   ///
   /// `--own-prefix .deps` => `[.deps/, .deps/a, .deps/b, ...]`
+  /* FIXME: explain how these work when stacked together! */
   #[arg(long, default_value = None)]
   pub own_prefix: Option<String>,
 }
