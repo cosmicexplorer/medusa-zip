@@ -57,3 +57,4 @@ lines_after_imports = 2
 container-engine = "podman"
 before-all = "curl https://sh.rustup.rs -sSf | sh -s -- -y"
 environment = { PATH="$HOME/.cargo/bin:$PATH" }
+build-verbosity = 3

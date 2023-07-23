@@ -158,7 +158,7 @@ jobs:
     #     key: v1
 
     - name: build sdist
-      if: ${{ matrix.os == 'ubuntu' && matrix.target == 'x86_64' && matrix.manylinux == 'auto' }}
+      if: ${{ matrix.os == 'ubuntu' }}
       run: python setup.py sdist
 
     - name: build wheels
