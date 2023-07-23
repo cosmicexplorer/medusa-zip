@@ -79,9 +79,7 @@ impl fmt::Display for EntryName {
 }
 
 impl cmp::PartialOrd for EntryName {
-  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-    self.components_vec().partial_cmp(&other.components_vec())
-  }
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> { Some(self.cmp(other)) }
 }
 
 impl cmp::Ord for EntryName {
@@ -173,9 +171,7 @@ pub struct FileSource {
  * possesses a lifetime, otherwise requiring the `name` string to be
  * cloned. */
 impl cmp::PartialOrd for FileSource {
-  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-    self.name.partial_cmp(&other.name)
-  }
+  fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> { Some(self.cmp(other)) }
 }
 
 impl cmp::Ord for FileSource {
