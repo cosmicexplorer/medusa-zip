@@ -20,6 +20,8 @@ tokio                   = "1.29"
 
 [workspace.dependencies.zip]
 version                 = "0.6.6"
+git                     = "https://github.com/cosmicexplorer/zip"
+rev                     = "79f818a8929b37eee6e7bf0e9284daa157a91aa7"
 package                 = "zip-merge"
 default-features        = false
 features                = ["deflate", "time", "rayon", "merge"]
