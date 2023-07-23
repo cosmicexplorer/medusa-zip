@@ -31,7 +31,7 @@ jobs:
 
     - run: pip install --upgrade pip
 
-    - name: install rust
+    - name: install rust ${{ matrix.rust-toolchain }}
       uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ matrix.rust-toolchain }}
