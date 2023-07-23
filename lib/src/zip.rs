@@ -227,18 +227,12 @@ pub enum CompressionMethod {
   /// deflate-compressed
   #[default]
   Deflated,
-  /// bzip2-compressed
-  Bzip2,
-  /// zstd-compressed
-  Zstd,
 }
 
 #[derive(Copy, Clone, Debug)]
 pub enum CompressionStrategy {
   Stored,
   Deflated(Option<u8>),
-  Bzip2(Option<u8>),
-  Zstd(Option<i8>),
 }
 
 impl Default for CompressionStrategy {
@@ -256,9 +250,7 @@ pub enum ParseCompressionOptionsError {
 }
 
 impl CompressionStrategy {
-  const BZIP2_RANGE: ops::RangeInclusive<i8> = ops::RangeInclusive::new(0, 9);
   const DEFLATE_RANGE: ops::RangeInclusive<i8> = ops::RangeInclusive::new(0, 9);
-  const ZSTD_RANGE: ops::RangeInclusive<i8> = ops::RangeInclusive::new(-7, 22);
 
   pub fn from_method_and_level(
     method: CompressionMethod,
@@ -285,34 +277,6 @@ impl CompressionStrategy {
           }
         },
       },
-      CompressionMethod::Bzip2 => match level {
-        None => Ok(Self::Bzip2(None)),
-        Some(level) => {
-          if Self::BZIP2_RANGE.contains(&level) {
-            Ok(Self::Bzip2(Some(level.try_into()?)))
-          } else {
-            Err(ParseCompressionOptionsError::InvalidCompressionLevel(
-              method,
-              level,
-              Self::BZIP2_RANGE,
-            ))
-          }
-        },
-      },
-      CompressionMethod::Zstd => match level {
-        None => Ok(Self::Zstd(None)),
-        Some(level) => {
-          if Self::ZSTD_RANGE.contains(&level) {
-            Ok(Self::Zstd(Some(level)))
-          } else {
-            Err(ParseCompressionOptionsError::InvalidCompressionLevel(
-              method,
-              level,
-              Self::ZSTD_RANGE,
-            ))
-          }
-        },
-      },
     }
   }
 }
@@ -329,14 +293,6 @@ impl DefaultInitializeZipOptions for CompressionStrategy {
             .expect("these values have already been checked")
         }),
       ),
-      Self::Bzip2(level) => (
-        ZipCompressionMethod::Bzip2,
-        level.map(|l| {
-          l.try_into()
-            .expect("these values have already been checked")
-        }),
-      ),
-      Self::Zstd(level) => (ZipCompressionMethod::Zstd, *level),
     };
     options
       .compression_method(method)

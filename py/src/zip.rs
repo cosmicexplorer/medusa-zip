@@ -236,8 +236,6 @@ impl From<lib_zip::ModifiedTimeBehavior> for ModifiedTimeBehavior {
 pub enum CompressionMethod {
   Stored,
   Deflated,
-  Bzip2,
-  Zstd,
 }
 
 impl Default for CompressionMethod {
@@ -256,8 +254,6 @@ impl From<CompressionMethod> for lib_zip::CompressionMethod {
     match x {
       CompressionMethod::Stored => Self::Stored,
       CompressionMethod::Deflated => Self::Deflated,
-      CompressionMethod::Bzip2 => Self::Bzip2,
-      CompressionMethod::Zstd => Self::Zstd,
     }
   }
 }
@@ -267,8 +263,6 @@ impl From<lib_zip::CompressionMethod> for CompressionMethod {
     match x {
       lib_zip::CompressionMethod::Stored => Self::Stored,
       lib_zip::CompressionMethod::Deflated => Self::Deflated,
-      lib_zip::CompressionMethod::Bzip2 => Self::Bzip2,
-      lib_zip::CompressionMethod::Zstd => Self::Zstd,
     }
   }
 }
@@ -325,10 +319,6 @@ impl From<lib_zip::CompressionStrategy> for CompressionOptions {
       lib_zip::CompressionStrategy::Deflated(level) => {
         (CompressionMethod::Deflated, level.map(|l| l as i8))
       },
-      lib_zip::CompressionStrategy::Bzip2(level) => {
-        (CompressionMethod::Bzip2, level.map(|l| l as i8))
-      },
-      lib_zip::CompressionStrategy::Zstd(level) => (CompressionMethod::Zstd, level),
     };
     Self { method, level }
   }

@@ -17,8 +17,14 @@ regex                   = "1"
 thiserror               = "1.0.30"
 time                    = { version = "0.3.23", features = ["local-offset", "parsing"] }
 tokio                   = "1.29"
-zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "8ca0ed7041fc2bb44aca16053c4f6d20631a627e", features = ["rayon", "merge"] }
-# zip                     = { path = "/home/cosmicexplorer/tools/zip", features = ["rayon", "merge"] }
+
+[workspace.dependencies.zip]
+# path = "/home/cosmicexplorer/tools/zip"
+git                     = "https://github.com/cosmicexplorer/zip"
+rev                     = "8ca0ed7041fc2bb44aca16053c4f6d20631a627e"
+default-features        = false
+# TODO: consider aes, bzip2, zstd support?
+features                = ["deflate", "time", "rayon", "merge"]
 
 [workspace.package]
 version                 = "0.0.0"

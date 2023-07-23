@@ -69,8 +69,6 @@ class ModifiedTimeBehavior:
 class CompressionMethod:
   Stored: 'CompressionMethod'
   Deflated: 'CompressionMethod'
-  Bzip2: 'CompressionMethod'
-  Zstd: 'CompressionMethod'
 
   def __int__(self) -> int: ...
 

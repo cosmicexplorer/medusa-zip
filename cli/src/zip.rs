@@ -149,10 +149,6 @@ pub enum CompressionMethod {
   /// deflate-compressed
   #[default]
   Deflated,
-  /// bzip2-compressed
-  Bzip2,
-  /// zstd-compressed
-  Zstd,
 }
 
 impl From<CompressionMethod> for lib_zip::CompressionMethod {
@@ -160,8 +156,6 @@ impl From<CompressionMethod> for lib_zip::CompressionMethod {
     match x {
       CompressionMethod::Stored => Self::Stored,
       CompressionMethod::Deflated => Self::Deflated,
-      CompressionMethod::Bzip2 => Self::Bzip2,
-      CompressionMethod::Zstd => Self::Zstd,
     }
   }
 }
@@ -176,6 +170,9 @@ pub struct CompressionOptions {
   /// regardless of this setting as an optimization.
   #[arg(value_enum, default_value_t, long)]
   pub compression_method: CompressionMethod,
+  /* /// - [`CompressionMethod::Bzip2`]: 0..=9 (default 6)
+   * /// - [`CompressionMethod::Zstd`]: -7..=22 (default 3)
+   */
   /// The degree of computational effort to exert for the
   /// [`Self::compression_method`].
   ///
@@ -183,8 +180,6 @@ pub struct CompressionOptions {
   /// - [`CompressionMethod::Stored`]: the program will error if this is
   ///   provided.
   /// - [`CompressionMethod::Deflated`]: 0..=9 (default 6)
-  /// - [`CompressionMethod::Bzip2`]: 0..=9 (default 6)
-  /// - [`CompressionMethod::Zstd`]: -7..=22 (default 3)
   ///   - 0 is also mapped to "default".
   #[arg(long, default_value = None, requires = "compression_method", verbatim_doc_comment)]
   pub compression_level: Option<i8>,
