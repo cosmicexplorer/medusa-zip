@@ -5,6 +5,7 @@
 #
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
+from datetime import datetime
 from typing import Iterable, Optional
 
 from . import FileSource
@@ -23,6 +24,25 @@ class AutomaticModifiedTimeStrategy:
 
 
 class ZipDateTime:
+  def __init__(self, year: int, month: int, day: int, hour: int, minute: int, second: int) -> None:
+    ...
+
+  @property
+  def year(self) -> int: ...
+  @property
+  def month(self) -> int: ...
+  @property
+  def day(self) -> int: ...
+  @property
+  def hour(self) -> int: ...
+  @property
+  def minute(self) -> int: ...
+  @property
+  def second(self) -> int: ...
+
+  @classmethod
+  def from_datetime(cls, py_datetime: datetime) -> 'ZipDateTime': ...
+
   @classmethod
   def parse(cls, s: str) -> 'ZipDateTime': ...
 

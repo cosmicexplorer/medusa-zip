@@ -16,7 +16,7 @@ use libmedusa_zip::{self as lib, zip as lib_zip};
 use pyo3::{
   exceptions::{PyException, PyValueError},
   prelude::*,
-  types::PyType,
+  types::{PyDateAccess, PyDateTime, PyTimeAccess, PyType},
 };
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use zip::DateTime as ZipDateTime;
@@ -40,55 +40,94 @@ impl AutomaticModifiedTimeStrategy {
 
 
 #[pyclass(name = "ZipDateTime")]
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct ZipDateTimeWrapper {
-  /* FIXME: figure out a way to record only the timestamp and round-trip through OffsetDateTime
-   * (possibly by editing types.rs in the zip crate) to avoid needing to retain the input
-   * string! This also lets us make this Copy, along with ModifiedTimeBehavior and
-   * ZipOutputOptions! */
-  pub input_string: String,
   pub timestamp: ZipDateTime,
 }
 
 #[pymethods]
 impl ZipDateTimeWrapper {
+  #[new]
+  fn new(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) -> PyResult<Self> {
+    let timestamp = ZipDateTime::from_date_and_time(year, month, day, hour, minute, second)
+      /* TODO: better error! */
+      .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
+    Ok(Self { timestamp })
+  }
+
+  #[getter]
+  fn year(&self) -> u16 { self.timestamp.year() }
+
+  #[getter]
+  fn month(&self) -> u8 { self.timestamp.month() }
+
+  #[getter]
+  fn day(&self) -> u8 { self.timestamp.day() }
+
+  #[getter]
+  fn hour(&self) -> u8 { self.timestamp.hour() }
+
+  #[getter]
+  fn minute(&self) -> u8 { self.timestamp.minute() }
+
+  #[getter]
+  fn second(&self) -> u8 { self.timestamp.second() }
+
+  #[classmethod]
+  fn from_datetime(_cls: &PyType, py_datetime: &PyDateTime) -> PyResult<Self> {
+    let year: u16 = py_datetime.get_year().try_into()
+      /* TODO: better error! */
+      .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
+    let month: u8 = py_datetime.get_month();
+    let day: u8 = py_datetime.get_day();
+    let hour: u8 = py_datetime.get_hour();
+    let minute: u8 = py_datetime.get_minute();
+    let second: u8 = py_datetime.get_second();
+    Self::new(year, month, day, hour, minute, second)
+  }
+
+  /// Parse an [RFC 3339] timestamp with UTC offset such as
+  /// '1985-04-12T23:20:50.52Z'.
+  ///
+  /// [RFC 3339]: https://datatracker.ietf.org/doc/html/rfc3339#section-5.6
   #[classmethod]
   fn parse(_cls: &PyType, s: &str) -> PyResult<Self> {
     let parsed_offset = OffsetDateTime::parse(s, &Rfc3339)
       /* TODO: better error! */
       .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
-    let zip_time: ZipDateTime = parsed_offset.try_into()
+    let timestamp: ZipDateTime = parsed_offset.try_into()
       /* TODO: better error! */
       .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
-    Ok(Self {
-      input_string: s.to_string(),
-      timestamp: zip_time,
-    })
+    Ok(Self { timestamp })
   }
 
   fn __repr__(&self) -> String {
-    let Self { input_string, .. } = self;
-    format!("ZipDateTime.parse({:?})", input_string)
+    format!(
+      "ZipDateTime(year={}, month={}, day={}, hour={}, minute={}, second={})",
+      self.year(),
+      self.month(),
+      self.day(),
+      self.hour(),
+      self.minute(),
+      self.second(),
+    )
   }
 }
 
 impl From<ZipDateTimeWrapper> for ZipDateTime {
   fn from(x: ZipDateTimeWrapper) -> Self {
-    let ZipDateTimeWrapper { timestamp, .. } = x;
+    let ZipDateTimeWrapper { timestamp } = x;
     timestamp
   }
 }
 
 impl From<ZipDateTime> for ZipDateTimeWrapper {
-  fn from(x: ZipDateTime) -> Self {
-    /* FIXME! */
-    todo!()
-  }
+  fn from(x: ZipDateTime) -> Self { Self { timestamp: x } }
 }
 
 
 #[pyclass]
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct ModifiedTimeBehavior {
   pub automatic_mtime_strategy: AutomaticModifiedTimeStrategy,
   pub explicit_mtime_timestamp: Option<ZipDateTimeWrapper>,
@@ -130,7 +169,7 @@ impl ModifiedTimeBehavior {
         ))
       },
       Some(explicit_mtime_timestamp) => {
-        let explicit_mtime_timestamp = repr(py, explicit_mtime_timestamp.clone())?;
+        let explicit_mtime_timestamp = repr(py, *explicit_mtime_timestamp)?;
         Ok(format!(
           "ModifiedTimeBehavior.explicit({})",
           explicit_mtime_timestamp
@@ -236,7 +275,7 @@ impl From<lib_zip::CompressionMethod> for CompressionMethod {
 
 
 #[pyclass]
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct CompressionOptions {
   #[pyo3(get)]
   pub method: CompressionMethod,
@@ -297,7 +336,7 @@ impl From<lib_zip::CompressionStrategy> for CompressionOptions {
 
 
 #[pyclass]
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct ZipOutputOptions {
   #[pyo3(get)]
   pub mtime_behavior: ModifiedTimeBehavior,
@@ -333,8 +372,8 @@ impl ZipOutputOptions {
       mtime_behavior,
       compression_options,
     } = self;
-    let mtime_behavior = repr(py, mtime_behavior.clone())?;
-    let compression_options = repr(py, compression_options.clone())?;
+    let mtime_behavior = repr(py, *mtime_behavior)?;
+    let compression_options = repr(py, *compression_options)?;
     Ok(format!(
       "ZipOutputOptions(mtime_behavior={}, compression_options={})",
       mtime_behavior, compression_options
@@ -525,7 +564,7 @@ impl MedusaZip {
       parallelism,
     } = self;
     let input_files = repr(py, input_files.clone())?;
-    let zip_options = repr(py, zip_options.clone())?;
+    let zip_options = repr(py, *zip_options)?;
     let modifications = repr(py, modifications.clone())?;
     let parallelism = repr(py, *parallelism)?;
     Ok(format!(

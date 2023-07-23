@@ -1486,7 +1486,7 @@ dependencies = [
 [[package]]
 name = "zip"
 version = "0.6.6"
-source = "git+https://github.com/cosmicexplorer/zip?rev=1942600a3fbeb202a54b1a3c936cc3d2878d65f7#1942600a3fbeb202a54b1a3c936cc3d2878d65f7"
+source = "git+https://github.com/cosmicexplorer/zip?rev=d48fb1dc1fc0355242f30349e03410c04b539f7e#d48fb1dc1fc0355242f30349e03410c04b539f7e"
 dependencies = [
  "aes",
  "byteorder",
