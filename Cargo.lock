@@ -346,16 +346,6 @@ dependencies = [
 
 [[package]]
 name = "displaydoc"
-version = "0.2.3"
-source = "git+https://github.com/yaahc/displaydoc?rev=7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27#7159bb5c9d41ca3c7ccf04ae86ae3acb0ea12a27"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "displaydoc"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "487585f4d0c6655fe74905e2504d8ad6908e4db67f744eb140876906c2f3175d"
@@ -649,7 +639,7 @@ version = "0.0.0"
 dependencies = [
  "async-recursion",
  "cfg-if",
- "displaydoc 0.2.4",
+ "displaydoc",
  "futures",
  "once_cell",
  "parking_lot 0.12.1",
@@ -691,7 +681,7 @@ name = "medusa-zip"
 version = "0.0.0"
 dependencies = [
  "clap",
- "displaydoc 0.2.4",
+ "displaydoc",
  "eyre",
  "libmedusa-zip",
  "regex",
@@ -1487,7 +1477,7 @@ dependencies = [
 [[package]]
 name = "zip"
 version = "0.6.6"
-source = "git+https://github.com/cosmicexplorer/zip?rev=d48fb1dc1fc0355242f30349e03410c04b539f7e#d48fb1dc1fc0355242f30349e03410c04b539f7e"
+source = "git+https://github.com/cosmicexplorer/zip?rev=8ca0ed7041fc2bb44aca16053c4f6d20631a627e#8ca0ed7041fc2bb44aca16053c4f6d20631a627e"
 dependencies = [
  "aes",
  "byteorder",
@@ -1496,7 +1486,7 @@ dependencies = [
  "constant_time_eq",
  "crc32fast",
  "crossbeam-utils",
- "displaydoc 0.2.3",
+ "displaydoc",
  "flate2",
  "hmac",
  "indexmap",
