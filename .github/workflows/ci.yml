@@ -140,6 +140,11 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
 
+  etc:
+    runs-on: ubuntu-latest
+    steps:
+    - run: echo ${{ github.ref }}
+
   build-bdists:
     name: build bdists for many pythons in a row on ${{ matrix.os }}
     # run on push to main, on release, and on PRs with the label 'Full Build'
