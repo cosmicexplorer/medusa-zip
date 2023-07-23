@@ -9,7 +9,7 @@ on:
   pull_request: {}
 
 jobs:
-  test:
+  test-py:
     runs-on: ubuntu-latest
     name: test ${{ matrix.python-version }} rust ${{ matrix.rust-toolchain }}
     strategy:
@@ -39,12 +39,58 @@ jobs:
       with:
         key: v1
 
+    - run: pip install -e .
+
+  test-rust:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - run: pip install --upgrade pip
+    - name: install rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+
+    - id: cache-rust
+      name: cache rust
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: v1
+
     - name: test rust
       run: cargo test
 
-    - run: pip install -e .
+  lint-rust:
+    runs-on: ubuntu-latest
 
-  lint:
+    steps:
+    - uses: actions/checkout@v3
+
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - run: pip install --upgrade pip
+    - name: install rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+
+    - id: cache-rust
+      name: cache rust
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: v1
+
+    - name: fmt rust
+      run: cargo fmt --check
+
+    - name: clippy rust
+      run: cargo clippy
+
+  lint-py:
     runs-on: ubuntu-latest
 
     steps:
@@ -56,20 +102,6 @@ jobs:
 
     - run: pip install --upgrade pip
 
-    - name: install rust nightly
-      uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: rustfmt, clippy
-
-    - name: cache rust
-      uses: Swatinem/rust-cache@v2
-
-    - name: fmt rust
-      run: cargo fmt --check
-
-    - name: clippy rust
-      run: cargo clippy
-
     - uses: isort/isort-action@master
       with:
         sortPaths: "py"
@@ -77,7 +109,7 @@ jobs:
   # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
   check:
     if: always()
-    needs: [test, lint]
+    needs: [test-py, test-rust, lint-rust, lint-py]
     runs-on: ubuntu-latest
     steps:
       - name: Decide whether the needed jobs succeeded or failed
