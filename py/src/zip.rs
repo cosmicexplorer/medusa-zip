@@ -23,24 +23,27 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use zip::DateTime as ZipDateTime;
 
 
-/* FIXME: add a .default() method!!! */
 #[pyclass]
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, Default)]
 pub enum AutomaticModifiedTimeStrategy {
+  #[default]
   Reproducible,
   CurrentTime,
   PreserveSourceTime,
 }
 
-impl Default for AutomaticModifiedTimeStrategy {
-  fn default() -> Self { Self::Reproducible }
+#[pymethods]
+impl AutomaticModifiedTimeStrategy {
+  #[classmethod]
+  #[pyo3(name = "default")]
+  fn py_default(_cls: &PyType) -> Self { Self::default() }
 }
 
 
 #[pyclass(name = "ZipDateTime")]
 #[derive(Clone)]
 pub struct ZipDateTimeWrapper {
-  /* TODO: figure out a way to record only the timestamp and round-trip through OffsetDateTime
+  /* FIXME: figure out a way to record only the timestamp and round-trip through OffsetDateTime
    * (possibly by editing types.rs in the zip crate) to avoid needing to retain the input
    * string! This also lets us make this Copy, along with ModifiedTimeBehavior and
    * ZipOutputOptions! */
@@ -92,6 +95,10 @@ pub struct ModifiedTimeBehavior {
   pub explicit_mtime_timestamp: Option<ZipDateTimeWrapper>,
 }
 
+impl Default for ModifiedTimeBehavior {
+  fn default() -> Self { lib_zip::ModifiedTimeBehavior::default().into() }
+}
+
 #[pymethods]
 impl ModifiedTimeBehavior {
   #[classmethod]
@@ -102,6 +109,12 @@ impl ModifiedTimeBehavior {
   #[classmethod]
   fn explicit(_cls: &PyType, timestamp: ZipDateTimeWrapper) -> Self {
     Self::internal_explicit(timestamp)
+  }
+
+  #[classmethod]
+  #[pyo3(name = "default")]
+  fn py_default(_cls: &PyType) -> Self {
+    Self::internal_automatic(AutomaticModifiedTimeStrategy::default())
   }
 
   fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
@@ -195,6 +208,17 @@ pub enum CompressionMethod {
   Zstd,
 }
 
+impl Default for CompressionMethod {
+  fn default() -> Self { lib_zip::CompressionMethod::default().into() }
+}
+
+#[pymethods]
+impl CompressionMethod {
+  #[classmethod]
+  #[pyo3(name = "default")]
+  fn py_default(_cls: &PyType) -> Self { Self::default() }
+}
+
 impl From<CompressionMethod> for lib_zip::CompressionMethod {
   fn from(x: CompressionMethod) -> Self {
     match x {
@@ -227,10 +251,18 @@ pub struct CompressionOptions {
   pub level: Option<i8>,
 }
 
+impl Default for CompressionOptions {
+  fn default() -> Self { lib_zip::CompressionStrategy::default().into() }
+}
+
 #[pymethods]
 impl CompressionOptions {
   #[new]
   fn new(method: CompressionMethod, level: Option<i8>) -> Self { Self { method, level } }
+
+  #[classmethod]
+  #[pyo3(name = "default")]
+  fn py_default(_cls: &PyType) -> Self { Self::default() }
 
   fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
     let Self { method, level } = self;
@@ -286,15 +318,28 @@ pub struct ZipOutputOptions {
   pub compression_options: CompressionOptions,
 }
 
+impl Default for ZipOutputOptions {
+  fn default() -> Self { lib_zip::ZipOutputOptions::default().into() }
+}
+
 #[pymethods]
 impl ZipOutputOptions {
   #[new]
-  fn new(mtime_behavior: ModifiedTimeBehavior, compression_options: CompressionOptions) -> Self {
+  fn new(
+    mtime_behavior: Option<ModifiedTimeBehavior>,
+    compression_options: Option<CompressionOptions>,
+  ) -> Self {
+    let mtime_behavior = mtime_behavior.unwrap_or_default();
+    let compression_options = compression_options.unwrap_or_default();
     Self {
       mtime_behavior,
       compression_options,
     }
   }
+
+  #[classmethod]
+  #[pyo3(name = "default")]
+  fn py_default(_cls: &PyType) -> Self { Self::default() }
 
   fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
     let Self {
@@ -359,6 +404,10 @@ pub struct EntryModifications {
   pub own_prefix: Option<String>,
 }
 
+impl Default for EntryModifications {
+  fn default() -> Self { lib_zip::EntryModifications::default().into() }
+}
+
 #[pymethods]
 impl EntryModifications {
   #[new]
@@ -368,6 +417,10 @@ impl EntryModifications {
       own_prefix,
     }
   }
+
+  #[classmethod]
+  #[pyo3(name = "default")]
+  fn py_default(_cls: &PyType) -> Self { Self::default() }
 
   fn __repr__(&self) -> String {
     let Self {
@@ -413,12 +466,22 @@ impl From<EntryModifications> for lib_zip::EntryModifications {
 }
 
 
-/* FIXME: create a .default() method for all of these! */
 #[pyclass]
 #[derive(Copy, Clone)]
 pub enum Parallelism {
   Synchronous,
   ParallelMerge,
+}
+
+impl Default for Parallelism {
+  fn default() -> Self { lib_zip::Parallelism::default().into() }
+}
+
+#[pymethods]
+impl Parallelism {
+  #[classmethod]
+  #[pyo3(name = "default")]
+  fn py_default(_cls: &PyType) -> Self { Self::default() }
 }
 
 impl From<lib_zip::Parallelism> for Parallelism {
@@ -454,10 +517,13 @@ impl MedusaZip {
   #[new]
   fn new(
     input_files: &PyAny,
-    zip_options: ZipOutputOptions,
-    modifications: EntryModifications,
-    parallelism: Parallelism,
+    zip_options: Option<ZipOutputOptions>,
+    modifications: Option<EntryModifications>,
+    parallelism: Option<Parallelism>,
   ) -> PyResult<Self> {
+    let zip_options = zip_options.unwrap_or_default();
+    let modifications = modifications.unwrap_or_default();
+    let parallelism = parallelism.unwrap_or_default();
     let input_files: Vec<FileSource> = input_files
       .iter()?
       .map(|f| f.and_then(PyAny::extract::<FileSource>))

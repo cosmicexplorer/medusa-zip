@@ -34,6 +34,9 @@ class DestinationBehavior:
 
   def __int__(self) -> int: ...
 
+  @classmethod
+  def default(cls) -> 'DestinationBehavior': ...
+
   async def initialize(self, path: Path) -> ZipFileWriter:
     ...
 

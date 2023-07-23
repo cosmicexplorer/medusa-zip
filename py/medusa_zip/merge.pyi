@@ -24,7 +24,7 @@ class MergeGroup:
 
 
 class MedusaMerge:
-  def __init__(self, groups: Optional[Iterable[MergeGroup]]) -> None:
+  def __init__(self, groups: Iterable[MergeGroup]) -> None:
     ...
 
   @property

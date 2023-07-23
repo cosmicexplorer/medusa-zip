@@ -106,15 +106,11 @@ pub struct MedusaMerge {
 #[pymethods]
 impl MedusaMerge {
   #[new]
-  fn new(groups: Option<&PyAny>) -> PyResult<Self> {
+  fn new(groups: &PyAny) -> PyResult<Self> {
     let groups: Vec<MergeGroup> = groups
-      .map(|gs| {
-        gs.iter()?
-          .map(|g| g.and_then(PyAny::extract::<MergeGroup>))
-          .collect::<PyResult<_>>()
-      })
-      .transpose()?
-      .unwrap_or_default();
+      .iter()?
+      .map(|g| g.and_then(PyAny::extract::<MergeGroup>))
+      .collect::<PyResult<_>>()?;
     Ok(Self { groups })
   }
 

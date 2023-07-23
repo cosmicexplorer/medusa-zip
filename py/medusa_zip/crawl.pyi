@@ -6,7 +6,7 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Iterable, Optional
 
 from .zip import EntryModifications, MedusaZip, Parallelism, ZipOutputOptions
 
@@ -30,24 +30,27 @@ class CrawlResult:
 
   def medusa_zip(
     self,
-    zip_options: ZipOutputOptions,
-    modifications: EntryModifications,
-    parallelism: Parallelism,
+    zip_options: Optional[ZipOutputOptions] = None,
+    modifications: Optional[EntryModifications] = None,
+    parallelism: Optional[Parallelism] = None,
   ) -> MedusaZip:
     ...
 
 
 class Ignores:
-  def __init__(self, patterns: Optional[List[str]] = None) -> None:
+  def __init__(self, patterns: Optional[Iterable[str]] = None) -> None:
     ...
+
+  @classmethod
+  def default(cls) -> 'Ignores': ...
 
 
 class MedusaCrawl:
-  def __init__(self, paths_to_crawl: List[Path], ignores: Ignores) -> None:
+  def __init__(self, paths_to_crawl: Iterable[Path], ignores: Optional[Ignores] = None) -> None:
     ...
 
   @property
-  def paths_to_crawl(self) -> List[Path]: ...
+  def paths_to_crawl(self) -> Iterable[Path]: ...
   @property
   def ignores(self) -> Ignores: ...
 

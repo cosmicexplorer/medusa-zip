@@ -17,7 +17,7 @@ use pyo3::{
   exceptions::{PyException, PyValueError},
   intern,
   prelude::*,
-  types::PyList,
+  types::PyType,
 };
 use regex::RegexSet;
 
@@ -103,16 +103,17 @@ impl CrawlResult {
 
   fn medusa_zip(
     &self,
-    zip_options: ZipOutputOptions,
-    modifications: EntryModifications,
-    parallelism: Parallelism,
+    zip_options: Option<ZipOutputOptions>,
+    modifications: Option<EntryModifications>,
+    parallelism: Option<Parallelism>,
   ) -> PyResult<MedusaZip> {
     let zip_options: lib_zip::ZipOutputOptions = zip_options
+      .unwrap_or_default()
       .try_into()
       /* TODO: better error! */
       .map_err(|e| PyException::new_err(format!("{}", e)))?;
-    let modifications: lib_zip::EntryModifications = modifications.into();
-    let parallelism: lib_zip::Parallelism = parallelism.into();
+    let modifications: lib_zip::EntryModifications = modifications.unwrap_or_default().into();
+    let parallelism: lib_zip::Parallelism = parallelism.unwrap_or_default().into();
     let crawl_result: lib_crawl::CrawlResult = self.clone().into();
     let medusa_zip = crawl_result
       .medusa_zip(zip_options, modifications, parallelism)
@@ -151,13 +152,20 @@ pub struct Ignores {
   pub patterns: RegexSet,
 }
 
+impl Default for Ignores {
+  fn default() -> Self { lib_crawl::Ignores::default().into() }
+}
+
 #[pymethods]
 impl Ignores {
   #[new]
-  fn new(patterns: Option<&PyList>) -> PyResult<Self> {
+  fn new(patterns: Option<&PyAny>) -> PyResult<Self> {
     let patterns: Vec<&str> = patterns
-      .map(|list| {
-        let ret: Vec<&str> = list.extract()?;
+      .map(|patterns| {
+        let ret: Vec<&str> = patterns
+          .iter()?
+          .map(|p| p.and_then(PyAny::extract::<&str>))
+          .collect::<PyResult<_>>()?;
         Ok::<_, PyErr>(ret)
       })
       .transpose()?
@@ -166,6 +174,10 @@ impl Ignores {
     let patterns = RegexSet::new(patterns).map_err(|e| PyValueError::new_err(format!("{}", e)))?;
     Ok(Self { patterns })
   }
+
+  #[classmethod]
+  #[pyo3(name = "default")]
+  fn py_default(_cls: &PyType) -> Self { Self::default() }
 
   fn __repr__(&self) -> String { format!("Ignores(patterns={:?})", self.patterns.patterns()) }
 }
@@ -176,6 +188,14 @@ impl From<Ignores> for lib_crawl::Ignores {
     Self { patterns }
   }
 }
+
+impl From<lib_crawl::Ignores> for Ignores {
+  fn from(x: lib_crawl::Ignores) -> Self {
+    let lib_crawl::Ignores { patterns } = x;
+    Self { patterns }
+  }
+}
+
 
 #[pyclass]
 #[derive(Clone)]
@@ -189,8 +209,12 @@ pub struct MedusaCrawl {
 #[pymethods]
 impl MedusaCrawl {
   #[new]
-  fn new(paths_to_crawl: &PyList, ignores: Ignores) -> PyResult<Self> {
-    let paths_to_crawl: Vec<PathBuf> = paths_to_crawl.extract()?;
+  fn new(paths_to_crawl: &PyAny, ignores: Option<Ignores>) -> PyResult<Self> {
+    let ignores = ignores.unwrap_or_default();
+    let paths_to_crawl: Vec<PathBuf> = paths_to_crawl
+      .iter()?
+      .map(|p| p.and_then(PyAny::extract::<PathBuf>))
+      .collect::<PyResult<_>>()?;
     Ok(Self {
       paths_to_crawl,
       ignores,

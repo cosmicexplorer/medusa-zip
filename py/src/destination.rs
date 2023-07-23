@@ -11,19 +11,69 @@
 
 use libmedusa_zip::destination as lib_destination;
 
-use pyo3::{exceptions::PyIOError, intern, prelude::*, types::PyBool};
+use pyo3::{
+  exceptions::PyIOError,
+  intern,
+  prelude::*,
+  types::{PyBool, PyType},
+};
 use zip::write::ZipWriter;
 
 use std::{fs::File, path::PathBuf};
 
 
 #[pyclass]
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone)]
 pub enum DestinationBehavior {
   AlwaysTruncate,
   AppendOrFail,
   OptimisticallyAppend,
   AppendToNonZip,
+}
+
+impl Default for DestinationBehavior {
+  fn default() -> Self { lib_destination::DestinationBehavior::default().into() }
+}
+
+#[pymethods]
+impl DestinationBehavior {
+  #[classmethod]
+  #[pyo3(name = "default")]
+  fn py_default(_cls: &PyType) -> Self { Self::default() }
+
+  #[cfg(feature = "asyncio")]
+  fn initialize<'a>(&self, py: Python<'a>, path: PathBuf) -> PyResult<&'a PyAny> {
+    let behavior: lib_destination::DestinationBehavior = (*self).into();
+    pyo3_asyncio::tokio::future_into_py(py, async move {
+      let output_zip_writer: ZipWriter<File> = behavior
+        .initialize(&path)
+        .await
+        /* TODO: better error! */
+        .map_err(|e| PyIOError::new_err(format!("{}", e)))?;
+      let output_wrapper = lib_destination::OutputWrapper::wrap(output_zip_writer);
+      Ok(ZipFileWriter {
+        output_path: path,
+        zip_writer: output_wrapper,
+      })
+    })
+  }
+
+  #[cfg(feature = "sync")]
+  fn initialize_sync(&self, py: Python, path: PathBuf) -> PyResult<ZipFileWriter> {
+    let handle = crate::TOKIO_RUNTIME.handle();
+    let behavior: lib_destination::DestinationBehavior = (*self).into();
+    py.allow_threads(move || {
+      let output_zip_writer: ZipWriter<File> = handle
+        .block_on(behavior.initialize(&path))
+        /* TODO: better error! */
+        .map_err(|e| PyIOError::new_err(format!("{}", e)))?;
+      let output_wrapper = lib_destination::OutputWrapper::wrap(output_zip_writer);
+      Ok::<_, PyErr>(ZipFileWriter {
+        output_path: path,
+        zip_writer: output_wrapper,
+      })
+    })
+  }
 }
 
 impl From<DestinationBehavior> for lib_destination::DestinationBehavior {
@@ -151,44 +201,6 @@ impl ZipFileWriter {
     let obj = self.clone().into_py(py);
     let _res = obj.call_method0(py, intern!(py, "finish_sync"))?;
     Ok(PyBool::new(py, false))
-  }
-}
-
-
-#[pymethods]
-impl DestinationBehavior {
-  #[cfg(feature = "asyncio")]
-  fn initialize<'a>(&self, py: Python<'a>, path: PathBuf) -> PyResult<&'a PyAny> {
-    let behavior: lib_destination::DestinationBehavior = (*self).into();
-    pyo3_asyncio::tokio::future_into_py(py, async move {
-      let output_zip_writer: ZipWriter<File> = behavior
-        .initialize(&path)
-        .await
-        /* TODO: better error! */
-        .map_err(|e| PyIOError::new_err(format!("{}", e)))?;
-      let output_wrapper = lib_destination::OutputWrapper::wrap(output_zip_writer);
-      Ok(ZipFileWriter {
-        output_path: path,
-        zip_writer: output_wrapper,
-      })
-    })
-  }
-
-  #[cfg(feature = "sync")]
-  fn initialize_sync(&self, py: Python, path: PathBuf) -> PyResult<ZipFileWriter> {
-    let handle = crate::TOKIO_RUNTIME.handle();
-    let behavior: lib_destination::DestinationBehavior = (*self).into();
-    py.allow_threads(move || {
-      let output_zip_writer: ZipWriter<File> = handle
-        .block_on(behavior.initialize(&path))
-        /* TODO: better error! */
-        .map_err(|e| PyIOError::new_err(format!("{}", e)))?;
-      let output_wrapper = lib_destination::OutputWrapper::wrap(output_zip_writer);
-      Ok::<_, PyErr>(ZipFileWriter {
-        output_path: path,
-        zip_writer: output_wrapper,
-      })
-    })
   }
 }
 
