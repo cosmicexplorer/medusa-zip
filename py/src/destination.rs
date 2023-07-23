@@ -11,7 +11,7 @@
 
 use libmedusa_zip::destination as lib_destination;
 
-use pyo3::{exceptions::PyIOError, prelude::*};
+use pyo3::{exceptions::PyIOError, intern, prelude::*, types::PyBool};
 use zip::write::ZipWriter;
 
 use std::{fs::File, path::PathBuf};
@@ -60,6 +60,98 @@ pub struct ZipFileWriter {
 #[pymethods]
 impl ZipFileWriter {
   fn __str__(&self) -> String { format!("ZipFileWriter(output_path={:?}, ...)", &self.output_path) }
+
+  #[cfg(feature = "asyncio")]
+  fn finish<'a>(&self, py: Python<'a>) -> PyResult<&'a PyAny> {
+    let Self {
+      output_path,
+      zip_writer,
+    } = self.clone();
+    pyo3_asyncio::tokio::future_into_py(py, async move {
+      tokio::task::spawn_blocking(move || {
+        let file = zip_writer
+          .clone()
+          .lease()
+          .finish()
+          .map_err(|e| PyIOError::new_err(format!("{}", e)))?;
+        file
+          .sync_all()
+          .map_err(|e| PyIOError::new_err(format!("{}", e)))?;
+        Ok::<_, PyErr>(output_path)
+      })
+      .await
+      .map_err(|e| PyIOError::new_err(format!("{}", e)))?
+    })
+  }
+
+  #[cfg(feature = "asyncio")]
+  fn __aenter__<'a>(&self, py: Python<'a>) -> PyResult<&'a PyAny> {
+    let obj = self.clone().into_py(py);
+    pyo3_asyncio::tokio::future_into_py(py, async move { Ok(obj) })
+  }
+
+  #[cfg(feature = "asyncio")]
+  fn __aexit__<'a>(
+    &self,
+    py: Python<'a>,
+    _exc_type: &PyAny,
+    _exc_val: &PyAny,
+    _traceback: &PyAny,
+  ) -> PyResult<&'a PyAny> {
+    let obj = self.clone().into_py(py);
+    let res =
+      pyo3_asyncio::tokio::into_future(obj.call_method0(py, intern!(py, "finish"))?.as_ref(py))?;
+    pyo3_asyncio::tokio::future_into_py(py, async move {
+      let _res = res.await?;
+      Ok(Python::with_gil(|py| {
+        let ret: Py<PyBool> = PyBool::new(py, false).into();
+        ret
+      }))
+    })
+  }
+
+  #[cfg(feature = "sync")]
+  fn finish_sync(&self, py: Python) -> PyResult<PathBuf> {
+    let handle = crate::TOKIO_RUNTIME.handle();
+    let Self {
+      output_path,
+      zip_writer,
+    } = self.clone();
+    py.allow_threads(move || {
+      handle.block_on(async move {
+        handle
+          .spawn_blocking(move || {
+            let file = zip_writer
+              .clone()
+              .lease()
+              .finish()
+              .map_err(|e| PyIOError::new_err(format!("{}", e)))?;
+            file
+              .sync_all()
+              .map_err(|e| PyIOError::new_err(format!("{}", e)))?;
+            Ok::<_, PyErr>(output_path)
+          })
+          .await
+          .map_err(|e| PyIOError::new_err(format!("{}", e)))?
+      })
+    })
+  }
+
+  #[cfg(feature = "sync")]
+  fn __enter__(&self, py: Python) -> Py<PyAny> { self.clone().into_py(py) }
+
+  #[cfg(feature = "sync")]
+  fn __exit__<'a>(
+    &self,
+    py: Python<'a>,
+    _exc_type: &PyAny,
+    _exc_val: &PyAny,
+    _traceback: &PyAny,
+  ) -> PyResult<&'a PyBool> {
+    let obj = self.clone().into_py(py);
+    let _res = obj.call_method0(py, intern!(py, "finish_sync"))?;
+    Ok(PyBool::new(py, false))
+  }
 }
 
 

@@ -23,12 +23,12 @@ pyo3-asyncio            = { git = "https://github.com/awestlake87/pyo3-asyncio",
 # pyo3-asyncio            = { version = "0.19", features = ["tokio-runtime"] }
 regex.workspace         = true
 time.workspace          = true
-tokio                   = { workspace = true, features = ["rt", "rt-multi-thread"], optional = true }
+tokio                   = { workspace = true, features = ["rt", "rt-multi-thread"] }
 zip.workspace           = true
 
 [features]
 asyncio                 = ["pyo3-asyncio"]
-sync                    = ["once_cell", "tokio"]
+sync                    = ["once_cell"]
 default                 = ["asyncio", "sync"]
 
 # Use nicer docs features for docs.rs. See https://users.rust-lang.org/t/how-to-test-a-package-metadata-docs-rs-setting/53818.
