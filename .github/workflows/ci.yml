@@ -28,6 +28,8 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
+    - run: pip install --upgrade pip
+
     - name: install rust stable
       uses: dtolnay/rust-toolchain@stable
 
@@ -37,11 +39,10 @@ jobs:
       with:
         key: v1
 
+    - name: test rust
+      run: cargo test
+
     - run: pip install -e .
-
-    - run: pip freeze
-
-    - run: echo "omg!"
 
   lint:
     runs-on: ubuntu-latest
@@ -53,6 +54,8 @@ jobs:
       with:
         python-version: '3.10'
 
+    - run: pip install --upgrade pip
+
     - name: install rust
       uses: dtolnay/rust-toolchain@stable
       with:
@@ -61,7 +64,15 @@ jobs:
     - name: cache rust
       uses: Swatinem/rust-cache@v2
 
-    - run: echo "wow!"
+    - name: fmt rust
+      run: cargo fmt --check
+
+    - name: clippy rust
+      run: cargo clippy
+
+    - uses: isort/isort-action@master
+      with:
+        sortPaths: "py"
 
   # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
   check:

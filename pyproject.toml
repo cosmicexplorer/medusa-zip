@@ -46,3 +46,8 @@ packages = ["medusa_zip"]
 [build-system]
 requires = ["setuptools>=61.0", "wheel", "setuptools-rust>=0.12.1"]
 build-backend = "setuptools.build_meta"
+
+[tool.isort]
+profile = "hug"
+src_paths = ["py"]
+lines_after_imports = 2
