@@ -115,7 +115,7 @@ jobs:
   # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
   check:
     if: always()
-    needs: [test-py, test-rust, lint-rust, lint-py]
+    needs: [test-py, test-rust, lint-rust, lint-py, check-versions]
     runs-on: ubuntu-latest
     steps:
       - name: Decide whether the needed jobs succeeded or failed
