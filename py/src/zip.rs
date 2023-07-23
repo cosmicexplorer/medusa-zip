@@ -542,7 +542,7 @@ impl MedusaZip {
       zip_writer,
     } = output_zip;
     pyo3_asyncio::tokio::future_into_py(py, async move {
-      /* FIXME: make a wrapper for this! */
+      /* TODO: make a wrapper for this packing/unpacking of ZipFileWriter! */
       let zip_writer = zip.zip(zip_writer)
         .await
         /* TODO: better error! */
