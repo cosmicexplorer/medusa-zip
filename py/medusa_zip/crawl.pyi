@@ -8,6 +8,8 @@
 from pathlib import Path
 from typing import Iterable, List, Optional
 
+from .zip import EntryModifications, MedusaZip, Parallelism, ZipOutputOptions
+
 
 class ResolvedPath:
   def __init__(self, *, unresolved_path: Path, resolved_path: Path) -> None:
@@ -25,6 +27,14 @@ class CrawlResult:
 
   @property
   def real_file_paths(self) -> Iterable[ResolvedPath]: ...
+
+  def medusa_zip(
+    self,
+    zip_options: ZipOutputOptions,
+    modifications: EntryModifications,
+    parallelism: Parallelism,
+  ) -> MedusaZip:
+    ...
 
 
 class Ignores:

@@ -9,7 +9,9 @@
 
 //! ???
 
-use libmedusa_zip::crawl as lib_crawl;
+use crate::zip::{EntryModifications, MedusaZip, Parallelism, ZipOutputOptions};
+
+use libmedusa_zip::{crawl as lib_crawl, zip as lib_zip};
 
 use pyo3::{
   exceptions::{PyException, PyValueError},
@@ -98,6 +100,27 @@ impl CrawlResult {
     let real_file_paths = self.real_file_paths.clone().into_py(py);
     format!("CrawlResult(real_file_paths={})", real_file_paths)
   }
+
+  fn medusa_zip(
+    &self,
+    zip_options: ZipOutputOptions,
+    modifications: EntryModifications,
+    parallelism: Parallelism,
+  ) -> PyResult<MedusaZip> {
+    let zip_options: lib_zip::ZipOutputOptions = zip_options
+      .try_into()
+      /* TODO: better error! */
+      .map_err(|e| PyException::new_err(format!("{}", e)))?;
+    let modifications: lib_zip::EntryModifications = modifications.into();
+    let parallelism: lib_zip::Parallelism = parallelism.into();
+    let crawl_result: lib_crawl::CrawlResult = self.clone().into();
+    let medusa_zip = crawl_result
+      .medusa_zip(zip_options, modifications, parallelism)
+      /* TODO: better error! */
+      .map_err(|e| PyException::new_err(format!("{}", e)))?;
+    let medusa_zip: MedusaZip = medusa_zip.into();
+    Ok(medusa_zip)
+  }
 }
 
 impl From<lib_crawl::CrawlResult> for CrawlResult {
@@ -111,6 +134,16 @@ impl From<lib_crawl::CrawlResult> for CrawlResult {
     }
   }
 }
+
+impl From<CrawlResult> for lib_crawl::CrawlResult {
+  fn from(x: CrawlResult) -> Self {
+    let CrawlResult { real_file_paths } = x;
+    Self {
+      real_file_paths: real_file_paths.into_iter().map(|rp| rp.into()).collect(),
+    }
+  }
+}
+
 
 #[pyclass]
 #[derive(Clone)]

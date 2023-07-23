@@ -77,6 +77,13 @@ impl From<ZipDateTimeWrapper> for ZipDateTime {
   }
 }
 
+impl From<ZipDateTime> for ZipDateTimeWrapper {
+  fn from(x: ZipDateTime) -> Self {
+    /* FIXME! */
+    todo!()
+  }
+}
+
 
 #[pyclass]
 #[derive(Clone)]
@@ -160,6 +167,25 @@ impl From<ModifiedTimeBehavior> for lib_zip::ModifiedTimeBehavior {
   }
 }
 
+impl From<lib_zip::ModifiedTimeBehavior> for ModifiedTimeBehavior {
+  fn from(x: lib_zip::ModifiedTimeBehavior) -> Self {
+    match x {
+      lib_zip::ModifiedTimeBehavior::Explicit(timestamp) => {
+        Self::internal_explicit(timestamp.into())
+      },
+      lib_zip::ModifiedTimeBehavior::Reproducible => {
+        Self::internal_automatic(AutomaticModifiedTimeStrategy::Reproducible)
+      },
+      lib_zip::ModifiedTimeBehavior::CurrentTime => {
+        Self::internal_automatic(AutomaticModifiedTimeStrategy::CurrentTime)
+      },
+      lib_zip::ModifiedTimeBehavior::PreserveSourceTime => {
+        Self::internal_automatic(AutomaticModifiedTimeStrategy::PreserveSourceTime)
+      },
+    }
+  }
+}
+
 #[pyclass]
 #[derive(Copy, Clone)]
 pub enum CompressionMethod {
@@ -179,6 +205,18 @@ impl From<CompressionMethod> for lib_zip::CompressionMethod {
     }
   }
 }
+
+impl From<lib_zip::CompressionMethod> for CompressionMethod {
+  fn from(x: lib_zip::CompressionMethod) -> Self {
+    match x {
+      lib_zip::CompressionMethod::Stored => Self::Stored,
+      lib_zip::CompressionMethod::Deflated => Self::Deflated,
+      lib_zip::CompressionMethod::Bzip2 => Self::Bzip2,
+      lib_zip::CompressionMethod::Zstd => Self::Zstd,
+    }
+  }
+}
+
 
 #[pyclass]
 #[derive(Clone)]
@@ -218,6 +256,23 @@ impl TryFrom<CompressionOptions> for lib_zip::CompressionStrategy {
     let CompressionOptions { method, level } = x;
     let method: lib_zip::CompressionMethod = method.into();
     Self::from_method_and_level(method, level)
+  }
+}
+
+impl From<lib_zip::CompressionStrategy> for CompressionOptions {
+  fn from(x: lib_zip::CompressionStrategy) -> Self {
+    let (method, level) = match x {
+      lib_zip::CompressionStrategy::Stored => (CompressionMethod::Stored, None),
+      /* FIXME: avoid unchecked cast here! */
+      lib_zip::CompressionStrategy::Deflated(level) => {
+        (CompressionMethod::Deflated, level.map(|l| l as i8))
+      },
+      lib_zip::CompressionStrategy::Bzip2(level) => {
+        (CompressionMethod::Bzip2, level.map(|l| l as i8))
+      },
+      lib_zip::CompressionStrategy::Zstd(level) => (CompressionMethod::Zstd, level),
+    };
+    Self { method, level }
   }
 }
 
@@ -276,6 +331,21 @@ impl TryFrom<ZipOutputOptions> for lib_zip::ZipOutputOptions {
       mtime_behavior,
       compression_options,
     })
+  }
+}
+
+impl From<lib_zip::ZipOutputOptions> for ZipOutputOptions {
+  fn from(x: lib_zip::ZipOutputOptions) -> Self {
+    let lib_zip::ZipOutputOptions {
+      mtime_behavior,
+      compression_options,
+    } = x;
+    let mtime_behavior: ModifiedTimeBehavior = mtime_behavior.into();
+    let compression_options: CompressionOptions = compression_options.into();
+    Self {
+      mtime_behavior,
+      compression_options,
+    }
   }
 }
 
@@ -500,6 +570,27 @@ impl TryFrom<MedusaZip> for lib_zip::MedusaZip {
       modifications,
       parallelism,
     })
+  }
+}
+
+impl From<lib_zip::MedusaZip> for MedusaZip {
+  fn from(x: lib_zip::MedusaZip) -> Self {
+    let lib_zip::MedusaZip {
+      input_files,
+      zip_options,
+      modifications,
+      parallelism,
+    } = x;
+    let input_files: Vec<FileSource> = input_files.into_iter().map(|fs| fs.into()).collect();
+    let zip_options: ZipOutputOptions = zip_options.into();
+    let modifications: EntryModifications = modifications.into();
+    let parallelism: Parallelism = parallelism.into();
+    Self {
+      input_files,
+      zip_options,
+      modifications,
+      parallelism,
+    }
   }
 }
 
