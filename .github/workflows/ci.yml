@@ -140,8 +140,8 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
 
-  build:
-    name: build on ${{ matrix.os }}
+  build-bdists:
+    name: build bdists for many pythons in a row on ${{ matrix.os }}
     # run on push to main, on release, and on PRs with the label 'Full Build'
     if: "success() && (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build'))"
     strategy:
@@ -173,16 +173,22 @@ jobs:
         if-no-files-found: error
 
   # inspect-pypi-assets:
-  #   needs: [build]
+  #   needs: [build-sdist, build-bdists]
   #   runs-on: ubuntu-latest
 
   #   steps:
   #     - uses: actions/checkout@v3
 
-  #     - name: get dist artifacts
+  #     - name: get sdist artifacts
   #       uses: actions/download-artifact@v3
   #       with:
-  #         name: pypi_files
+  #         name: sdist-artifact
+  #         path: dist
+
+  #     - name: get bdist artifacts
+  #       uses: actions/download-artifact@v3
+  #       with:
+  #         name: bdist-artifact
   #         path: dist
 
   #     - name: list dist files
