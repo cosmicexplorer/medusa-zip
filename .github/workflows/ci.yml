@@ -74,11 +74,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-
     - uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-
     - run: pip install --upgrade pip
 
     - name: install rust nightly
@@ -140,9 +138,8 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
 
-  check-py-version:
-    name: validate whether the python version was correctly set for this release
-    # NB: we define a "release" as a tag starting with a 'v'!
+  check-versions:
+    name: ensure package versions all correspond to the most recent tag
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -151,28 +148,31 @@ jobs:
     - uses: actions/setup-python@v4
       with:
         python-version: '3.11'
-
     - run: pip install --upgrade pip
+    - run: sudo apt install jq
+    - name: install rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+    - id: cache-rust-version-check
+      name: cache rust
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: v1
 
     - run: python -c 'import tomllib; t = tomllib.load(open("pyproject.toml", "rb")); print("\n".join(t["build-system"]["requires"]));' > build-requires.txt
-
     - run: pip install -r build-requires.txt
 
-    - run: "[[ \"v$(python setup.py --dry-run --version)\" == \"$(git describe --tags --abbrev=0)\" ]]"
+    - run: git describe --tags --abbrev=0 > latest-tag.version
+    - run: printf 'v%s\n' "$(python setup.py --dry-run --version)" > py.version
+    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "libmedusa-zip") | "v" + .version' > rust-lib.version
+    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "pymedusa-zip") | "v" + .version' > py-lib.version
+    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "medusa-zip") | "v" + .version' > cli.version
 
-  # check-rust-version:
-  #   name: validate whether the python version was correctly set for this release
-  #   # NB: we define a "release" as a tag starting with a 'v'!
-  #   if: startsWith(github.ref, 'refs/tags/v')
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - uses: actions/checkout@v3
-  #   - uses: actions/setup-python@v4
-  #     with:
-  #       python-version: '3.10'
-  #   - run: pip install --upgrade pip
-  #   - run: python setup.py --version > version.txt
-  #   - run: [[ "refs/tags/v$(python setup.py --version)" == '${{ github.ref }}' ]]
+    - run: |
+        num_separate_versions="$(cat *.version | sort -u | wc -l)"
+        if [[ "$num_separate_versions" -gt 1 ]]; then
+          printf '%s\n' '::error::versions are out of sync:' $(cat *.version)
+          exit 1
+        fi
 
   build-bdists:
     name: build bdists for many pythons in a row on ${{ matrix.os }}
