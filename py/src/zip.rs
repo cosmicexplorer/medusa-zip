@@ -210,7 +210,9 @@ impl From<CompressionMethod> for lib_zip::CompressionMethod {
 #[pyclass]
 #[derive(Clone)]
 pub struct CompressionOptions {
+  #[pyo3(get, name = "method")]
   pub compression_method: CompressionMethod,
+  #[pyo3(get, name = "level")]
   pub compression_level: Option<i8>,
 }
 
@@ -264,7 +266,9 @@ impl TryFrom<CompressionOptions> for lib_zip::CompressionStrategy {
 #[pyclass]
 #[derive(Clone)]
 pub struct ZipOutputOptions {
+  #[pyo3(get)]
   pub mtime_behavior: ModifiedTimeBehavior,
+  #[pyo3(get)]
   pub compression_options: CompressionOptions,
 }
 
@@ -320,7 +324,9 @@ impl TryFrom<ZipOutputOptions> for lib_zip::ZipOutputOptions {
 #[pyclass]
 #[derive(Clone)]
 pub struct EntryModifications {
+  #[pyo3(get)]
   pub silent_external_prefix: Option<String>,
+  #[pyo3(get)]
   pub own_prefix: Option<String>,
 }
 

@@ -9,7 +9,8 @@ from pathlib import Path
 
 
 class ZipFileWriter:
-  ...
+  @property
+  def output_path(self) -> Path: ...
 
 
 class DestinationBehavior:
@@ -21,4 +22,7 @@ class DestinationBehavior:
   def __int__(self) -> int: ...
 
   async def initialize(self, path: Path) -> ZipFileWriter:
+    ...
+
+  def initialize_sync(self, path: Path) -> ZipFileWriter:
     ...

@@ -36,3 +36,10 @@ class MedusaMerge:
     output_zip: ZipFileWriter,
   ) -> ZipFileWriter:
     ...
+
+  def merge_sync(
+    self,
+    mtime_behavior: ModifiedTimeBehavior,
+    output_zip: ZipFileWriter,
+  ) -> ZipFileWriter:
+    ...

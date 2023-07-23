@@ -52,6 +52,7 @@ impl From<lib_destination::DestinationBehavior> for DestinationBehavior {
 #[pyclass]
 #[derive(Clone)]
 pub struct ZipFileWriter {
+  #[pyo3(get)]
   pub output_path: PathBuf,
   pub zip_writer: lib_destination::OutputWrapper<ZipWriter<File>>,
 }

@@ -2,4 +2,4 @@ include Cargo.toml
 recursive-include lib *.rs *.toml
 recursive-include py *.rs *.toml
 recursive-include cli *.rs *.toml
-recursive-include py py.typed *.pyi
+recursive-include py py.typed *.py *.pyi
