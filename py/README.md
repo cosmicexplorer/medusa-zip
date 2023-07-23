@@ -1,4 +1,4 @@
-pymedusa
-========
+pymedusa-zip
+============
 
 ???

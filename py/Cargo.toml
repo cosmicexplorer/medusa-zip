@@ -9,6 +9,7 @@ keywords.workspace      = true
 categories              = ["development-tools::build-utils", "filesystem", "asynchronous", "caching", "api-bindings"]
 homepage.workspace      = true
 repository.workspace    = true
+description             = "A PyOxidizer interface to high-performance parallelized implementations of common zip file operations."
 
 [lib]
 name                    = "pymedusa_zip"
