@@ -895,10 +895,12 @@ name = "pymedusa-zip"
 version = "0.0.0"
 dependencies = [
  "libmedusa-zip",
+ "once_cell",
  "pyo3",
  "pyo3-asyncio",
  "regex",
  "time",
+ "tokio",
  "zip",
 ]
 

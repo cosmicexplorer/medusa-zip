@@ -14,9 +14,12 @@ from setuptools_rust import Binding, RustExtension
 setup(
     # Version/name/etc are managed by hand in pyproject.toml.
     rust_extensions=[
-        RustExtension("pymedusa_zip.pymedusa_zip",
-                      path="py/Cargo.toml",
-                      binding=Binding.PyO3),
+        RustExtension(
+          "pymedusa_zip.pymedusa_zip",
+          path="py/Cargo.toml",
+          # FIXME: toggle this on only if the "asyncio" extra (in pyproject.toml) is provided!
+          features=["asyncio", "sync"],
+          binding=Binding.PyO3),
     ],
     zip_safe=False,
 )

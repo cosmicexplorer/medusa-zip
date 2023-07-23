@@ -463,6 +463,7 @@ impl MedusaZip {
     ))
   }
 
+  #[cfg(feature = "asyncio")]
   fn zip<'a>(&self, py: Python<'a>, output_zip: ZipFileWriter) -> PyResult<&'a PyAny> {
     let zip: lib_zip::MedusaZip = self.clone().try_into()?;
     let ZipFileWriter {
@@ -472,6 +473,26 @@ impl MedusaZip {
     pyo3_asyncio::tokio::future_into_py(py, async move {
       let zip_writer = zip.zip(zip_writer)
         .await
+        /* TODO: better error! */
+        .map_err(|e| PyException::new_err(format!("{}", e)))?;
+      let output_zip = ZipFileWriter {
+        output_path,
+        zip_writer,
+      };
+      Ok::<_, PyErr>(output_zip)
+    })
+  }
+
+  #[cfg(feature = "sync")]
+  fn zip_sync<'a>(&self, py: Python<'a>, output_zip: ZipFileWriter) -> PyResult<ZipFileWriter> {
+    let handle = crate::TOKIO_RUNTIME.handle();
+    let zip: lib_zip::MedusaZip = self.clone().try_into()?;
+    let ZipFileWriter {
+      output_path,
+      zip_writer,
+    } = output_zip;
+    py.allow_threads(move || {
+      let zip_writer = handle.block_on(zip.zip(zip_writer))
         /* TODO: better error! */
         .map_err(|e| PyException::new_err(format!("{}", e)))?;
       let output_zip = ZipFileWriter {

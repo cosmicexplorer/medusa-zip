@@ -127,6 +127,7 @@ impl MedusaMerge {
     Ok(format!("MedusaMerge(groups={})", groups))
   }
 
+  #[cfg(feature = "asyncio")]
   fn merge<'a>(
     &self,
     py: Python<'a>,
@@ -147,6 +148,36 @@ impl MedusaMerge {
       let zip_writer = merge
         .merge(mtime_behavior, zip_writer)
         .await
+        /* TODO: better error! */
+        .map_err(|e| PyException::new_err(format!("{}", e)))?;
+      let output_zip = ZipFileWriter {
+        output_path,
+        zip_writer,
+      };
+      Ok::<_, PyErr>(output_zip)
+    })
+  }
+
+  #[cfg(feature = "sync")]
+  fn merge_sync<'a>(
+    &self,
+    py: Python<'a>,
+    mtime_behavior: ModifiedTimeBehavior,
+    output_zip: ZipFileWriter,
+  ) -> PyResult<ZipFileWriter> {
+    let handle = crate::TOKIO_RUNTIME.handle();
+    let merge: lib_merge::MedusaMerge = self
+      .clone()
+      .try_into()
+      /* TODO: better error! */
+      .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
+    let mtime_behavior: lib_zip::ModifiedTimeBehavior = mtime_behavior.into();
+    let ZipFileWriter {
+      output_path,
+      zip_writer,
+    } = output_zip;
+    py.allow_threads(move || {
+      let zip_writer = handle.block_on(merge.merge(mtime_behavior, zip_writer))
         /* TODO: better error! */
         .map_err(|e| PyException::new_err(format!("{}", e)))?;
       let output_zip = ZipFileWriter {

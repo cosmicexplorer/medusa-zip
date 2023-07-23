@@ -35,6 +35,10 @@ Homepage = "https://github.com/cosmicexplorer/medusa-zip"
 Repository = "https://github.com/cosmicexplorer/medusa-zip"
 "Bug Tracker" = "https://github.com/cosmicexplorer/medusa-zip/issues"
 
+[project.optional-dependencies]
+asyncio = []
+sync = []
+
 [tool.setuptools]
 package-dir = {"" = "py"}
 packages = ["medusa_zip"]

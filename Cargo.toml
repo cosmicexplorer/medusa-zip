@@ -9,7 +9,7 @@ default-members         = [
     "./py",
     "./cli",
 ]
-resolver = "2"
+resolver                = "2"
 
 [workspace.dependencies]
 # FIXME: remove this or at least make it an optional dep for the lib.
@@ -18,6 +18,7 @@ displaydoc              = "0.2.4"
 regex                   = "1"
 thiserror               = "1.0.30"
 time                    = { version = "0.3.23", features = ["local-offset", "parsing"] }
+tokio                   = "1.29"
 zip                     = { git = "https://github.com/cosmicexplorer/zip", rev = "869ebd491327a62344b24f0b4ce3686ba42d53cd", features = ["rayon", "merge"] }
 # zip                     = { path = "/home/cosmicexplorer/tools/zip", features = ["rayon", "merge"] }
 
@@ -33,5 +34,5 @@ homepage                = "https://github.com/cosmicexplorer/medusa-zip"
 repository              = "https://github.com/cosmicexplorer/medusa-zip"
 
 [profile.release]
-strip = true
-lto = true
+strip                   = true
+lto                     = true

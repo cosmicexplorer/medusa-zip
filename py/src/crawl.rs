@@ -175,12 +175,27 @@ impl MedusaCrawl {
     ))
   }
 
+  #[cfg(feature = "asyncio")]
   fn crawl_paths<'a>(&self, py: Python<'a>) -> PyResult<&'a PyAny> {
     let crawl: lib_crawl::MedusaCrawl = self.clone().into();
     pyo3_asyncio::tokio::future_into_py(py, async move {
       let ret: PyResult<CrawlResult> = crawl
         .crawl_paths()
         .await
+        /* TODO: better error! */
+        .map_err(|e| PyException::new_err(format!("{}", e)))
+        .map(|cr| cr.into());
+      ret
+    })
+  }
+
+  #[cfg(feature = "sync")]
+  fn crawl_paths_sync<'a>(&self, py: Python<'a>) -> PyResult<CrawlResult> {
+    let handle = crate::TOKIO_RUNTIME.handle();
+    let crawl: lib_crawl::MedusaCrawl = self.clone().into();
+    py.allow_threads(move || {
+      let ret: PyResult<CrawlResult> = handle.block_on(crawl
+        .crawl_paths())
         /* TODO: better error! */
         .map_err(|e| PyException::new_err(format!("{}", e)))
         .map(|cr| cr.into());

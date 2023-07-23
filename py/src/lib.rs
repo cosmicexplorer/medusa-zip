@@ -133,6 +133,15 @@ impl From<lib::FileSource> for FileSource {
 }
 
 
+/* TODO: consider adding TailTasks as in pants's task_executor subcrate in
+ * case we ever end up spawning further background tasks or whatever. */
+#[cfg(feature = "sync")]
+pub(crate) static TOKIO_RUNTIME: once_cell::sync::Lazy<tokio::runtime::Runtime> =
+  once_cell::sync::Lazy::new(|| {
+    tokio::runtime::Runtime::new().expect("creating ffi runtime failed")
+  });
+
+
 fn add_submodule(parent: &PyModule, py: Python<'_>, child: &PyModule) -> PyResult<()> {
   parent.add_submodule(child)?;
   py.import("sys")?
