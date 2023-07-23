@@ -172,40 +172,28 @@ jobs:
         path: ./wheelhouse/*.whl
         if-no-files-found: error
 
-  # inspect-pypi-assets:
-  #   needs: [build-sdist, build-bdists]
-  #   runs-on: ubuntu-latest
+  upload-pypi-assets:
+    name: upload it to pypi
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: [build-sdist, build-bdists]
+    environment: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
 
-  #   steps:
-  #     - uses: actions/checkout@v3
+    steps:
+      - uses: actions/checkout@v3
 
-  #     - name: get sdist artifacts
-  #       uses: actions/download-artifact@v3
-  #       with:
-  #         name: sdist-artifact
-  #         path: dist
+      - name: get sdist artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: sdist-artifact
+          path: dist
 
-  #     - name: get bdist artifacts
-  #       uses: actions/download-artifact@v3
-  #       with:
-  #         name: bdist-artifact
-  #         path: dist
+      - name: get bdist artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: bdist-artifact
+          path: dist
 
-  #     - name: list dist files
-  #       run: |
-  #        ls -lh dist/
-  #        echo "`ls dist | wc -l` files"
-
-  #     - name: extract and list sdist file
-  #       run: |
-  #        mkdir sdist-files
-  #        tar -xvf dist/*.tar.gz -C sdist-files
-  #        tree -a sdist-files
-
-  #     - name: extract and list wheel file
-  #       run: |
-  #        ls dist/*cp310-manylinux*x86_64.whl | head -n 1
-  #        python -m zipfile --list `ls dist/*cp310-manylinux*x86_64.whl | head -n 1`
-
-  #     - run: pip install twine
-  #     - run: twine check dist/*
+      - uses: pypa/gh-action-pypi-publish@release/v1
