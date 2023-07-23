@@ -190,7 +190,7 @@ impl MedusaCrawl {
   }
 
   #[cfg(feature = "sync")]
-  fn crawl_paths_sync<'a>(&self, py: Python<'a>) -> PyResult<CrawlResult> {
+  fn crawl_paths_sync(&self, py: Python) -> PyResult<CrawlResult> {
     let handle = crate::TOKIO_RUNTIME.handle();
     let crawl: lib_crawl::MedusaCrawl = self.clone().into();
     py.allow_threads(move || {

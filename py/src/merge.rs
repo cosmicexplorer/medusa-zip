@@ -159,9 +159,9 @@ impl MedusaMerge {
   }
 
   #[cfg(feature = "sync")]
-  fn merge_sync<'a>(
+  fn merge_sync(
     &self,
-    py: Python<'a>,
+    py: Python,
     mtime_behavior: ModifiedTimeBehavior,
     output_zip: ZipFileWriter,
   ) -> PyResult<ZipFileWriter> {

@@ -83,7 +83,7 @@ impl DestinationBehavior {
   }
 
   #[cfg(feature = "sync")]
-  fn initialize_sync<'a>(&self, py: Python<'a>, path: PathBuf) -> PyResult<ZipFileWriter> {
+  fn initialize_sync(&self, py: Python, path: PathBuf) -> PyResult<ZipFileWriter> {
     let handle = crate::TOKIO_RUNTIME.handle();
     let behavior: lib_destination::DestinationBehavior = (*self).into();
     py.allow_threads(move || {

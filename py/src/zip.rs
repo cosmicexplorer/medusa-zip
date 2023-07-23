@@ -66,7 +66,7 @@ pub struct ZipDateTimeWrapper {
 #[pymethods]
 impl ZipDateTimeWrapper {
   #[classmethod]
-  fn parse<'a>(_cls: &'a PyType, s: &str) -> PyResult<Self> {
+  fn parse(_cls: &PyType, s: &str) -> PyResult<Self> {
     let parsed_offset = OffsetDateTime::parse(s, &Rfc3339)
       /* TODO: better error! */
       .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
@@ -104,12 +104,12 @@ pub struct ModifiedTimeBehavior {
 impl ModifiedTimeBehavior {
   #[classmethod]
   fn automatic(_cls: &PyType, automatic_mtime_strategy: AutomaticModifiedTimeStrategy) -> Self {
-    Self::internal_automatic(automatic_mtime_strategy.into())
+    Self::internal_automatic(automatic_mtime_strategy)
   }
 
   #[classmethod]
   fn explicit(_cls: &PyType, timestamp: ZipDateTimeWrapper) -> Self {
-    Self::internal_explicit(timestamp.into())
+    Self::internal_explicit(timestamp)
   }
 
   fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
@@ -119,7 +119,7 @@ impl ModifiedTimeBehavior {
     } = self;
     match explicit_mtime_timestamp {
       None => {
-        let automatic_mtime_strategy = automatic_mtime_strategy.clone().into_py(py);
+        let automatic_mtime_strategy = automatic_mtime_strategy.into_py(py);
         let automatic_mtime_strategy: String = automatic_mtime_strategy
           .call_method0(py, intern!(py, "__repr__"))?
           .extract(py)?;
@@ -146,7 +146,7 @@ impl ModifiedTimeBehavior {
   fn internal_automatic(automatic_mtime_strategy: AutomaticModifiedTimeStrategy) -> Self {
     Self {
       automatic_mtime_strategy,
-      explicit_mtime_timestamp: Default::default(),
+      explicit_mtime_timestamp: None,
     }
   }
 
@@ -231,8 +231,8 @@ impl CompressionOptions {
       compression_method,
       compression_level,
     } = self;
-    let method = compression_method.clone().into_py(py);
-    let level = compression_level.clone().into_py(py);
+    let method = compression_method.into_py(py);
+    let level = compression_level.into_py(py);
     let method: String = method
       .call_method0(py, intern!(py, "__repr__"))?
       .extract(py)?;
@@ -450,7 +450,7 @@ impl MedusaZip {
     let input_files = input_files.clone().into_py(py);
     let zip_options = zip_options.clone().into_py(py);
     let modifications = modifications.clone().into_py(py);
-    let parallelism = parallelism.clone().into_py(py);
+    let parallelism = parallelism.into_py(py);
     let input_files: String = input_files
       .call_method0(py, intern!(py, "__repr__"))?
       .extract(py)?;
@@ -490,7 +490,7 @@ impl MedusaZip {
   }
 
   #[cfg(feature = "sync")]
-  fn zip_sync<'a>(&self, py: Python<'a>, output_zip: ZipFileWriter) -> PyResult<ZipFileWriter> {
+  fn zip_sync(&self, py: Python, output_zip: ZipFileWriter) -> PyResult<ZipFileWriter> {
     let handle = crate::TOKIO_RUNTIME.handle();
     let zip: lib_zip::MedusaZip = self.clone().try_into()?;
     let ZipFileWriter {

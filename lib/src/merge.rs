@@ -100,7 +100,7 @@ impl MedusaMerge {
         current_prefix = Some(new_prefix);
       } else {
         /* If no prefixes have been declared, assume they begin with an empty prefix. */
-        current_prefix.get_or_insert_with(|| None);
+        current_prefix.get_or_insert(None);
         current_sources.push(PathBuf::from(arg));
       }
     }

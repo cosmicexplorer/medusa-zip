@@ -183,19 +183,12 @@ impl cmp::Ord for FileSource {
 }
 
 pub mod destination;
-/* pub use destination::{DestinationBehavior, DestinationError}; */
 
 pub mod crawl;
-/* pub use crawl::{CrawlResult, MedusaCrawl, MedusaCrawlArgs, MedusaCrawlError}; */
 
 pub mod zip;
-/* pub use crate::zip::{ */
-/*   EntryModifications, MedusaZip, MedusaZipError, ModifiedTimeBehavior, Parallelism, */
-/*   ZipOutputOptions, */
-/* }; */
 
 pub mod merge;
-/* pub use merge::{MedusaMerge, MedusaMergeError, MergeArgParseError, MergeGroup}; */
 
 mod util;
 
