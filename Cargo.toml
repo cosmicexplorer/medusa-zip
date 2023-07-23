@@ -27,7 +27,7 @@ edition                 = "2021"
 license                 = "Apache-2.0"
 
 keywords                = ["zip", "file", "archive", "parallel", "i/o"]
-categories              = ["development-tools::build-utils", "filesystem", "asynchronous", "caching", "command-line-utilities"]
+categories              = ["development-tools::build-utils", "filesystem", "asynchronous", "caching"]
 homepage                = "https://github.com/cosmicexplorer/medusa-zip"
 repository              = "https://github.com/cosmicexplorer/medusa-zip"
 

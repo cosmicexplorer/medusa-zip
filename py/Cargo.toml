@@ -6,13 +6,13 @@ edition.workspace       = true
 license.workspace       = true
 
 keywords.workspace      = true
-categories.workspace    = true
+categories              = ["development-tools::build-utils", "filesystem", "asynchronous", "caching", "api-bindings"]
 homepage.workspace      = true
 repository.workspace    = true
 
 [lib]
 name                    = "pymedusa_zip"
-crate-type              = ["cdylib", "rlib"]
+crate-type              = ["cdylib"]
 
 [dependencies]
 libmedusa-zip           = { path = "../lib" }
