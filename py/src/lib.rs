@@ -50,7 +50,7 @@ use libmedusa_zip as lib;
 
 use pyo3::{exceptions::PyValueError, intern, prelude::*};
 
-use std::{convert::TryFrom, path::PathBuf};
+use std::path::PathBuf;
 
 
 #[pyclass]
@@ -87,6 +87,7 @@ impl From<lib::EntryName> for EntryName {
 
 
 #[pyclass]
+#[derive(Clone)]
 pub struct FileSource {
   #[pyo3(get)]
   pub name: EntryName,
@@ -108,6 +109,26 @@ impl FileSource {
       "FileSource(name={}, source={:?})",
       name, &self.source
     ))
+  }
+}
+
+impl TryFrom<FileSource> for lib::FileSource {
+  type Error = lib::MedusaNameFormatError;
+
+  fn try_from(x: FileSource) -> Result<Self, Self::Error> {
+    let FileSource { name, source } = x;
+    let name: lib::EntryName = name.try_into()?;
+    Ok(Self { name, source })
+  }
+}
+
+impl From<lib::FileSource> for FileSource {
+  fn from(x: lib::FileSource) -> Self {
+    let lib::FileSource { name, source } = x;
+    Self {
+      name: name.into(),
+      source,
+    }
   }
 }
 

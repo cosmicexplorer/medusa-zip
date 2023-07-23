@@ -19,10 +19,7 @@ use pyo3::{
   prelude::*,
 };
 
-use std::{
-  convert::{TryFrom, TryInto},
-  path::PathBuf,
-};
+use std::path::PathBuf;
 
 
 #[pyclass]
@@ -40,7 +37,7 @@ impl MergeGroup {
   #[pyo3(signature = (prefix, sources))]
   fn new(py: Python<'_>, prefix: Option<&PyAny>, sources: &PyAny) -> PyResult<Self> {
     let prefix: Option<EntryName> = prefix.map(|p| {
-      if p.is_instance_of::<EntryName>()? {
+      if p.is_instance_of::<EntryName>() {
         Ok(p.extract()?)
       } else {
         let p = p.into_py(py);
@@ -58,6 +55,22 @@ impl MergeGroup {
       .map(|s| s.and_then(PyAny::extract::<PathBuf>))
       .collect::<PyResult<_>>()?;
     Ok(Self { prefix, sources })
+  }
+
+  fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+    let Self { prefix, sources } = self;
+    let prefix = prefix.clone().into_py(py);
+    let sources = sources.clone().into_py(py);
+    let prefix: String = prefix
+      .call_method0(py, intern!(py, "__repr__"))?
+      .extract(py)?;
+    let sources: String = sources
+      .call_method0(py, intern!(py, "__repr__"))?
+      .extract(py)?;
+    Ok(format!(
+      "MergeGroup(prefix={}, sources={})",
+      prefix, sources
+    ))
   }
 }
 
@@ -103,6 +116,15 @@ impl MedusaMerge {
       .transpose()?
       .unwrap_or_default();
     Ok(Self { groups })
+  }
+
+  fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+    let Self { groups } = self;
+    let groups = groups.clone().into_py(py);
+    let groups: String = groups
+      .call_method0(py, intern!(py, "__repr__"))?
+      .extract(py)?;
+    Ok(format!("MedusaMerge(groups={})", groups))
   }
 
   fn merge<'a>(

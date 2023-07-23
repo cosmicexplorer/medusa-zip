@@ -49,7 +49,6 @@ use zip::{
 use std::os::unix::fs::PermissionsExt;
 use std::{
   cmp,
-  convert::{TryFrom, TryInto},
   io::{Seek, Write},
   mem, num, ops,
   path::{Path, PathBuf},
@@ -1026,7 +1025,7 @@ impl MedusaZip {
     })
     .await??;
 
-    let static_options_initializers: Vec<Box<dyn DefaultInitializeZipOptions>> =
+    let static_options_initializers: Vec<Box<dyn DefaultInitializeZipOptions+Send+Sync>> =
       vec![Box::new(mtime_behavior), Box::new(compression_options)];
     let mut zip_options = ZipLibraryFileOptions::default();
     for initializer in static_options_initializers.into_iter() {

@@ -168,8 +168,6 @@ mod cli {
     use tokio::io::{self, AsyncReadExt};
     use zip::write::ZipWriter;
 
-    use std::convert::TryInto;
-
     impl Output {
       pub async fn initialize(self) -> eyre::Result<ZipWriter<std::fs::File>> {
         let Self {
