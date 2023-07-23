@@ -4,7 +4,6 @@ version = "0.0.0"
 description = "High-performance parallelized implementations of common zip file operations."
 license = {text = "Apache-2.0"}
 readme = "py/README.md"
-requires-python = ">=3.7"
 authors = [
   {name = "Danny McClanahan", email = "dmcC2@hypnicjerk.ai"},
 ]
@@ -30,6 +29,7 @@ classifiers = [
   "Topic :: System :: Software Distribution",
   "Topic :: Utilities",
 ]
+requires-python = ">=3.11,<3.12"
 
 [project.urls]
 Homepage = "https://github.com/cosmicexplorer/medusa-zip"
