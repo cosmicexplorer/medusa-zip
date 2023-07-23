@@ -131,15 +131,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: install rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - id: cache-rust-sdist
-        name: cache rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: v1
-
       - name: Build sdist
         run: pipx run build --sdist
 
