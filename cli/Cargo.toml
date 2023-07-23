@@ -11,13 +11,15 @@ homepage.workspace      = true
 repository.workspace    = true
 
 [dependencies]
-clap.workspace          = true
+clap                    = { version = "4", features = ["derive"] }
 displaydoc.workspace    = true
 eyre                    = "0.6.8"
 libmedusa-zip           = { path = "../lib" }
 regex                   = "1"
+serde                   = { version = "1", features = ["derive"] }
 serde_json              = "1.0"
 thiserror.workspace     = true
+time.workspace          = true
 tokio                   = { workspace = true, features = ["io-util", "io-std", "macros", "rt-multi-thread"] }
 zip.workspace           = true
 

@@ -9,17 +9,9 @@
 
 //! ???
 
-#[cfg(doc)]
-use crate::merge::MergeGroup;
-use crate::{
-  destination::OutputWrapper, util::clap_handlers, EntryName, FileSource, MedusaNameFormatError,
-};
+use crate::{destination::OutputWrapper, EntryName, FileSource, MedusaNameFormatError};
 
 use cfg_if::cfg_if;
-use clap::{
-  builder::{TypedValueParser, ValueParserFactory},
-  Args, ValueEnum,
-};
 use displaydoc::Display;
 use futures::stream::StreamExt;
 use once_cell::sync::Lazy;
@@ -28,9 +20,7 @@ use rayon::prelude::*;
 use static_init;
 use tempfile;
 use thiserror::Error;
-use time::{
-  error::ComponentRange, format_description::well_known::Rfc3339, OffsetDateTime, UtcOffset,
-};
+use time::{error::ComponentRange, OffsetDateTime, UtcOffset};
 use tokio::{
   fs, io,
   sync::{mpsc, oneshot},
@@ -100,35 +90,6 @@ pub trait InitializeZipOptionsForSpecificFile {
   ) -> Result<ZipLibraryFileOptions, InitializeZipOptionsError>;
 }
 
-#[derive(Copy, Clone, Default, Debug, ValueEnum)]
-pub enum AutomaticModifiedTimeStrategy {
-  /// All modification times for entries will be set to 1980-01-1 at 00:00:00.
-  #[default]
-  Reproducible,
-  /// All modification times for entries will be set to a single timestamp,
-  /// recorded at the beginning of the program's runtime.
-  CurrentTime,
-  /// Each file's modification time on disk will be converted into a zip
-  /// timestamp when it is entered into the archive.
-  ///
-  /// NOTE: this does not apply to directories, as this program does not copy
-  /// directory paths from disk, but instead synthesizes them as necessary
-  /// into the output file based upon the file list. This virtualization of
-  /// directories is currently necessary to make zip file merging unambiguous,
-  /// which is key to this program's ability to parallelize.
-  ///
-  /// **When this setting is provided, unlike files, directories will instead
-  /// have the same behavior as if [`current-time`](Self::CurrentTime) was
-  /// provided.**
-  ///
-  /// As a result, this setting should probably not be provided for the
-  /// `merge` operation, as merging zips does not read any file entries from
-  /// disk itself, but instead simply copies them over verbatim from the
-  /// source zip files, and only inserts directories as specified by the
-  /// [`prefix`](MergeGroup::prefix) provided in each each [`MergeGroup`].
-  PreserveSourceTime,
-}
-
 const MINIMUM_ZIP_TIME: ZipDateTime = ZipDateTime::zero();
 
 /* The `time` crate is extremely touchy about only ever extracting the local
@@ -152,75 +113,6 @@ static CURRENT_ZIP_TIME: Lazy<ZipDateTime> = Lazy::new(|| {
     .expect("failed to convert local time into zip time at startup")
 });
 
-#[derive(Copy, Clone, Debug)]
-pub struct ZipDateTimeWrapper(pub ZipDateTime);
-
-#[derive(Clone)]
-pub struct ZipDateTimeParser;
-
-impl TypedValueParser for ZipDateTimeParser {
-  type Value = ZipDateTimeWrapper;
-
-  fn parse_ref(
-    &self,
-    cmd: &clap::Command,
-    arg: Option<&clap::Arg>,
-    value: &std::ffi::OsStr,
-  ) -> Result<Self::Value, clap::Error> {
-    let inner = clap::builder::StringValueParser::new();
-    let val = inner.parse_ref(cmd, arg, value)?;
-
-    let parsed_offset = OffsetDateTime::parse(&val, &Rfc3339).map_err(|e| {
-      let mut err = clap_handlers::prepare_clap_error(cmd, arg, &val);
-      clap_handlers::process_clap_error(
-        &mut err,
-        e,
-        "Provide a string which can be formatted according to RFC 3339, such as '1985-04-12T23:20:50.52Z'. See https://datatracker.ietf.org/doc/html/rfc3339#section-5.6 for details.",
-      );
-      err
-    })?;
-    let zip_time: ZipDateTime = parsed_offset.try_into().map_err(|e| {
-      let mut err = clap_handlers::prepare_clap_error(cmd, arg, &val);
-      clap_handlers::process_clap_error(
-        &mut err,
-        e,
-        "The zip implementation used by this program only supports years from 1980-2107.",
-      );
-      err
-    })?;
-    Ok(ZipDateTimeWrapper(zip_time))
-  }
-}
-
-impl ValueParserFactory for ZipDateTimeWrapper {
-  type Parser = ZipDateTimeParser;
-
-  fn value_parser() -> Self::Parser { ZipDateTimeParser }
-}
-
-#[derive(Copy, Clone, Debug, Default, Args)]
-pub struct ModifiedTimeBehaviorArgs {
-  /// Assign timestamps to the entries of the output zip file according to some
-  /// formula.
-  #[arg(
-    value_enum,
-    default_value_t,
-    long,
-    conflicts_with = "explicit_mtime_timestamp"
-  )]
-  pub automatic_mtime_strategy: AutomaticModifiedTimeStrategy,
-  /// Assign a single [RFC 3339] timestamp such as '1985-04-12T23:20:50.52Z' to
-  /// every file and directory.
-  ///
-  /// Because zip files do not retain time zone information, we must provide UTC
-  /// offsets whenever we interact with them. The timestamps will also be
-  /// truncated to 2-second accuracy.
-  ///
-  /// [RFC 3339]: https://datatracker.ietf.org/doc/html/rfc3339#section-5.6
-  #[arg(long, default_value = None)]
-  pub explicit_mtime_timestamp: Option<ZipDateTimeWrapper>,
-}
-
 /* FIXME: establish one canonical place (probably the CLI help?) where the
  * definition of these repeated enum cases are specified. */
 #[derive(Copy, Clone, Default, Debug)]
@@ -230,23 +122,6 @@ pub enum ModifiedTimeBehavior {
   CurrentTime,
   PreserveSourceTime,
   Explicit(ZipDateTime),
-}
-
-impl From<ModifiedTimeBehaviorArgs> for ModifiedTimeBehavior {
-  fn from(x: ModifiedTimeBehaviorArgs) -> Self {
-    let ModifiedTimeBehaviorArgs {
-      automatic_mtime_strategy,
-      explicit_mtime_timestamp,
-    } = x;
-    match explicit_mtime_timestamp {
-      Some(ZipDateTimeWrapper(timestamp)) => Self::Explicit(timestamp),
-      None => match automatic_mtime_strategy {
-        AutomaticModifiedTimeStrategy::Reproducible => Self::Reproducible,
-        AutomaticModifiedTimeStrategy::CurrentTime => Self::CurrentTime,
-        AutomaticModifiedTimeStrategy::PreserveSourceTime => Self::PreserveSourceTime,
-      },
-    }
-  }
 }
 
 impl DefaultInitializeZipOptions for ModifiedTimeBehavior {
@@ -345,7 +220,7 @@ impl InitializeZipOptionsForSpecificFile for LargeFileBehavior {
   }
 }
 
-#[derive(Copy, Clone, Default, Debug, Display, ValueEnum)]
+#[derive(Copy, Clone, Default, Debug, Display)]
 pub enum CompressionMethod {
   /// uncompressed
   Stored,
@@ -356,39 +231,6 @@ pub enum CompressionMethod {
   Bzip2,
   /// zstd-compressed
   Zstd,
-}
-
-#[derive(Copy, Clone, Default, Debug, Args)]
-pub struct CompressionOptions {
-  /// This method is a default set for the entire file.
-  ///
-  /// The [`zip`] library will internally set compression to
-  /// [`CompressionMethod::Stored`] for extremely small directory entries
-  /// regardless of this setting as an optimization.
-  #[arg(value_enum, default_value_t, long)]
-  pub compression_method: CompressionMethod,
-  /// The degree of computational effort to exert for the
-  /// [`Self::compression_method`].
-  ///
-  /// Each compression method interprets this argument differently:
-  /// - [`CompressionMethod::Stored`]: the program will error if this is
-  ///   provided.
-  /// - [`CompressionMethod::Deflated`]: 0..=9 (default 6)
-  /// - [`CompressionMethod::Bzip2`]: 0..=9 (default 6)
-  /// - [`CompressionMethod::Zstd`]: -7..=22 (default 3)
-  ///   - 0 is also mapped to "default".
-  #[arg(long, default_value = None, requires = "compression_method", verbatim_doc_comment)]
-  pub compression_level: Option<i8>,
-}
-
-#[derive(Debug, Display, Error)]
-pub enum ParseCompressionOptionsError {
-  /// "stored" (uncompressed) does not accept a compression level (was: {0})
-  CompressionLevelWithStored(i8),
-  /// compression level {1} was invalid for method {0} which accepts {2:?}
-  InvalidCompressionLevel(CompressionMethod, i8, ops::RangeInclusive<i8>),
-  /// error converting from int (this should never happen!): {0}
-  TryFromInt(#[from] num::TryFromIntError),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -403,59 +245,68 @@ impl Default for CompressionStrategy {
   fn default() -> Self { Self::Deflated(Some(6)) }
 }
 
+#[derive(Debug, Display, Error)]
+pub enum ParseCompressionOptionsError {
+  /// "stored" (uncompressed) does not accept a compression level (was: {0})
+  CompressionLevelWithStored(i8),
+  /// compression level {1} was invalid for method {0} which accepts {2:?}
+  InvalidCompressionLevel(CompressionMethod, i8, ops::RangeInclusive<i8>),
+  /// error converting from int (this should never happen!): {0}
+  TryFromInt(#[from] num::TryFromIntError),
+}
+
 impl CompressionStrategy {
   const BZIP2_RANGE: ops::RangeInclusive<i8> = ops::RangeInclusive::new(0, 9);
   const DEFLATE_RANGE: ops::RangeInclusive<i8> = ops::RangeInclusive::new(0, 9);
   const ZSTD_RANGE: ops::RangeInclusive<i8> = ops::RangeInclusive::new(-7, 22);
 
-  pub fn from_options(options: CompressionOptions) -> Result<Self, ParseCompressionOptionsError> {
-    let CompressionOptions {
-      compression_method,
-      compression_level,
-    } = options;
-    match compression_method {
-      CompressionMethod::Stored => match compression_level {
+  pub fn from_method_and_level(
+    method: CompressionMethod,
+    level: Option<i8>,
+  ) -> Result<Self, ParseCompressionOptionsError> {
+    match method {
+      CompressionMethod::Stored => match level {
         None => Ok(Self::Stored),
         Some(level) => Err(ParseCompressionOptionsError::CompressionLevelWithStored(
           level,
         )),
       },
-      CompressionMethod::Deflated => match compression_level {
+      CompressionMethod::Deflated => match level {
         None => Ok(Self::Deflated(None)),
         Some(level) => {
           if Self::DEFLATE_RANGE.contains(&level) {
             Ok(Self::Deflated(Some(level.try_into()?)))
           } else {
             Err(ParseCompressionOptionsError::InvalidCompressionLevel(
-              compression_method,
+              method,
               level,
               Self::DEFLATE_RANGE,
             ))
           }
         },
       },
-      CompressionMethod::Bzip2 => match compression_level {
+      CompressionMethod::Bzip2 => match level {
         None => Ok(Self::Bzip2(None)),
         Some(level) => {
           if Self::BZIP2_RANGE.contains(&level) {
             Ok(Self::Bzip2(Some(level.try_into()?)))
           } else {
             Err(ParseCompressionOptionsError::InvalidCompressionLevel(
-              compression_method,
+              method,
               level,
               Self::BZIP2_RANGE,
             ))
           }
         },
       },
-      CompressionMethod::Zstd => match compression_level {
+      CompressionMethod::Zstd => match level {
         None => Ok(Self::Zstd(None)),
         Some(level) => {
           if Self::ZSTD_RANGE.contains(&level) {
             Ok(Self::Zstd(Some(level)))
           } else {
             Err(ParseCompressionOptionsError::InvalidCompressionLevel(
-              compression_method,
+              method,
               level,
               Self::ZSTD_RANGE,
             ))
@@ -496,13 +347,6 @@ impl DefaultInitializeZipOptions for CompressionStrategy {
   }
 }
 
-#[derive(Copy, Clone, Default, Debug, Args)]
-pub struct ZipOutputOptionsArgs {
-  #[command(flatten)]
-  pub mtime_behavior: ModifiedTimeBehaviorArgs,
-  #[command(flatten)]
-  pub compression_options: CompressionOptions,
-}
 
 #[derive(Copy, Clone, Default, Debug)]
 pub struct ZipOutputOptions {
@@ -510,24 +354,8 @@ pub struct ZipOutputOptions {
   pub compression_options: CompressionStrategy,
 }
 
-impl TryFrom<ZipOutputOptionsArgs> for ZipOutputOptions {
-  type Error = ParseCompressionOptionsError;
 
-  fn try_from(x: ZipOutputOptionsArgs) -> Result<Self, Self::Error> {
-    let ZipOutputOptionsArgs {
-      mtime_behavior,
-      compression_options,
-    } = x;
-    let mtime_behavior: ModifiedTimeBehavior = mtime_behavior.into();
-    let compression_options = CompressionStrategy::from_options(compression_options)?;
-    Ok(Self {
-      mtime_behavior,
-      compression_options,
-    })
-  }
-}
-
-#[derive(Clone, Default, Debug, Args)]
+#[derive(Clone, Default, Debug)]
 pub struct EntryModifications {
   /// This prefixes a directory path to every entry without creating any of its
   /// parent directories.
@@ -536,7 +364,6 @@ pub struct EntryModifications {
   /// [`Self::own_prefix`].
   ///
   /// `--silent-external-prefix .deps` => `[.deps/a, .deps/b, ...]`
-  #[arg(long, default_value = None)]
   /* FIXME: make these both EntryName (also, parse EntryName at clap validation time)! */
   pub silent_external_prefix: Option<String>,
   /// This prefixes a directory path to every entry, but this *will* create
@@ -544,7 +371,6 @@ pub struct EntryModifications {
   ///
   /// `--own-prefix .deps` => `[.deps/, .deps/a, .deps/b, ...]`
   /* FIXME: explain how these work when stacked together! */
-  #[arg(long, default_value = None)]
   pub own_prefix: Option<String>,
 }
 
@@ -797,7 +623,7 @@ impl IntermediateSingleEntry {
   }
 }
 
-#[derive(Copy, Clone, Default, Debug, ValueEnum)]
+#[derive(Copy, Clone, Default, Debug)]
 pub enum Parallelism {
   /// Read source files and copy them to the output zip in order.
   Synchronous,
@@ -806,6 +632,7 @@ pub enum Parallelism {
   ParallelMerge,
 }
 
+#[derive(Clone)]
 pub struct MedusaZip {
   pub input_files: Vec<FileSource>,
   pub zip_options: ZipOutputOptions,

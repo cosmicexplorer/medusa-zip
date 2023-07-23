@@ -29,7 +29,7 @@ zip.workspace           = true
 [features]
 asyncio                 = ["pyo3-asyncio"]
 sync                    = ["once_cell", "tokio"]
-default                 = []
+default                 = ["asyncio", "sync"]
 
 # Use nicer docs features for docs.rs. See https://users.rust-lang.org/t/how-to-test-a-package-metadata-docs-rs-setting/53818.
 [package.metadata.docs.rs]

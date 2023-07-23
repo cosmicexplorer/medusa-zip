@@ -23,6 +23,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use zip::DateTime as ZipDateTime;
 
 
+/* FIXME: add a .default() method!!! */
 #[pyclass]
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum AutomaticModifiedTimeStrategy {
@@ -31,24 +32,8 @@ pub enum AutomaticModifiedTimeStrategy {
   PreserveSourceTime,
 }
 
-impl From<lib_zip::AutomaticModifiedTimeStrategy> for AutomaticModifiedTimeStrategy {
-  fn from(x: lib_zip::AutomaticModifiedTimeStrategy) -> Self {
-    match x {
-      lib_zip::AutomaticModifiedTimeStrategy::Reproducible => Self::Reproducible,
-      lib_zip::AutomaticModifiedTimeStrategy::CurrentTime => Self::CurrentTime,
-      lib_zip::AutomaticModifiedTimeStrategy::PreserveSourceTime => Self::PreserveSourceTime,
-    }
-  }
-}
-
-impl From<AutomaticModifiedTimeStrategy> for lib_zip::AutomaticModifiedTimeStrategy {
-  fn from(x: AutomaticModifiedTimeStrategy) -> Self {
-    match x {
-      AutomaticModifiedTimeStrategy::Reproducible => Self::Reproducible,
-      AutomaticModifiedTimeStrategy::CurrentTime => Self::CurrentTime,
-      AutomaticModifiedTimeStrategy::PreserveSourceTime => Self::PreserveSourceTime,
-    }
-  }
+impl Default for AutomaticModifiedTimeStrategy {
+  fn default() -> Self { Self::Reproducible }
 }
 
 
@@ -153,7 +138,7 @@ impl ModifiedTimeBehavior {
   fn internal_explicit(timestamp: ZipDateTimeWrapper) -> Self {
     Self {
       explicit_mtime_timestamp: Some(timestamp),
-      automatic_mtime_strategy: lib_zip::AutomaticModifiedTimeStrategy::default().into(),
+      automatic_mtime_strategy: AutomaticModifiedTimeStrategy::default(),
     }
   }
 }
@@ -184,18 +169,6 @@ pub enum CompressionMethod {
   Zstd,
 }
 
-/* FIXME: remove CompressionMethod/CompressionOptions from lib_zip! */
-impl From<lib_zip::CompressionMethod> for CompressionMethod {
-  fn from(x: lib_zip::CompressionMethod) -> Self {
-    match x {
-      lib_zip::CompressionMethod::Stored => Self::Stored,
-      lib_zip::CompressionMethod::Deflated => Self::Deflated,
-      lib_zip::CompressionMethod::Bzip2 => Self::Bzip2,
-      lib_zip::CompressionMethod::Zstd => Self::Zstd,
-    }
-  }
-}
-
 impl From<CompressionMethod> for lib_zip::CompressionMethod {
   fn from(x: CompressionMethod) -> Self {
     match x {
@@ -210,29 +183,21 @@ impl From<CompressionMethod> for lib_zip::CompressionMethod {
 #[pyclass]
 #[derive(Clone)]
 pub struct CompressionOptions {
-  #[pyo3(get, name = "method")]
-  pub compression_method: CompressionMethod,
-  #[pyo3(get, name = "level")]
-  pub compression_level: Option<i8>,
+  #[pyo3(get)]
+  pub method: CompressionMethod,
+  #[pyo3(get)]
+  pub level: Option<i8>,
 }
 
 #[pymethods]
 impl CompressionOptions {
   #[new]
-  fn new(method: CompressionMethod, level: Option<i8>) -> Self {
-    Self {
-      compression_method: method,
-      compression_level: level,
-    }
-  }
+  fn new(method: CompressionMethod, level: Option<i8>) -> Self { Self { method, level } }
 
   fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-    let Self {
-      compression_method,
-      compression_level,
-    } = self;
-    let method = compression_method.into_py(py);
-    let level = compression_level.into_py(py);
+    let Self { method, level } = self;
+    let method = method.into_py(py);
+    let level = level.into_py(py);
     let method: String = method
       .call_method0(py, intern!(py, "__repr__"))?
       .extract(py)?;
@@ -250,15 +215,9 @@ impl TryFrom<CompressionOptions> for lib_zip::CompressionStrategy {
   type Error = lib_zip::ParseCompressionOptionsError;
 
   fn try_from(x: CompressionOptions) -> Result<Self, Self::Error> {
-    let CompressionOptions {
-      compression_method,
-      compression_level,
-    } = x;
-    let compression_options = lib_zip::CompressionOptions {
-      compression_method: compression_method.into(),
-      compression_level,
-    };
-    Self::from_options(compression_options)
+    let CompressionOptions { method, level } = x;
+    let method: lib_zip::CompressionMethod = method.into();
+    Self::from_method_and_level(method, level)
   }
 }
 
@@ -384,6 +343,7 @@ impl From<EntryModifications> for lib_zip::EntryModifications {
 }
 
 
+/* FIXME: create a .default() method for all of these! */
 #[pyclass]
 #[derive(Copy, Clone)]
 pub enum Parallelism {
@@ -447,6 +407,7 @@ impl MedusaZip {
       modifications,
       parallelism,
     } = self;
+    /* FIXME: make a wrapper for this! */
     let input_files = input_files.clone().into_py(py);
     let zip_options = zip_options.clone().into_py(py);
     let modifications = modifications.clone().into_py(py);
@@ -477,6 +438,7 @@ impl MedusaZip {
       zip_writer,
     } = output_zip;
     pyo3_asyncio::tokio::future_into_py(py, async move {
+      /* FIXME: make a wrapper for this! */
       let zip_writer = zip.zip(zip_writer)
         .await
         /* TODO: better error! */

@@ -10,21 +10,15 @@
 //! ???
 
 use crate::{
-  util::clap_handlers,
   zip::{EntryModifications, MedusaZip, Parallelism, ZipOutputOptions},
   EntryName, FileSource, MedusaNameFormatError,
 };
 
 use async_recursion::async_recursion;
-use clap::{
-  builder::{TypedValueParser, ValueParserFactory},
-  Args,
-};
 use displaydoc::Display;
 use futures::{future::try_join_all, stream::StreamExt};
 use rayon::prelude::*;
-use regex::{Regex, RegexSet};
-use serde::{Deserialize, Serialize};
+use regex::RegexSet;
 use thiserror::Error;
 use tokio::{fs, io};
 use tokio_stream::wrappers::ReadDirStream;
@@ -48,7 +42,7 @@ pub enum MedusaCrawlError {
   CrawlFormat(#[from] MedusaCrawlFormatError),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct ResolvedPath {
   /// The path *without* any symlink resolution.
   pub unresolved_path: PathBuf,
@@ -99,7 +93,7 @@ impl ResolvedPath {
   }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CrawlResult {
   pub real_file_paths: Vec<ResolvedPath>,
 }
@@ -188,50 +182,6 @@ impl fmt::Display for Ignores {
     let joined: String = quoted.join(", ");
     write!(f, "[{}]", joined)
   }
-}
-
-#[derive(Clone, Debug)]
-pub struct RegexWrapper(pub Regex);
-
-impl fmt::Display for RegexWrapper {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    let Self(p) = self;
-    p.fmt(f)
-  }
-}
-
-#[derive(Clone)]
-pub struct RegexParser;
-
-impl TypedValueParser for RegexParser {
-  type Value = RegexWrapper;
-
-  fn parse_ref(
-    &self,
-    cmd: &clap::Command,
-    arg: Option<&clap::Arg>,
-    value: &std::ffi::OsStr,
-  ) -> Result<Self::Value, clap::Error> {
-    let inner = clap::builder::StringValueParser::new();
-    let val = inner.parse_ref(cmd, arg, value)?;
-
-    let regex = Regex::new(&val).map_err(|e| {
-      let mut err = clap_handlers::prepare_clap_error(cmd, arg, &val);
-      clap_handlers::process_clap_error(
-        &mut err,
-        e,
-        "Regular expressions are parsed using the rust regex crate. See https://docs.rs/regex/latest/regex/index.html#syntax for more details."
-      );
-      err
-    })?;
-    Ok(RegexWrapper(regex))
-  }
-}
-
-impl ValueParserFactory for RegexWrapper {
-  type Parser = RegexParser;
-
-  fn value_parser() -> Self::Parser { RegexParser }
 }
 
 #[derive(Debug)]
@@ -327,38 +277,6 @@ impl Input {
           .collect::<Result<Vec<CrawlResult>, MedusaCrawlError>>()?;
         Ok(CrawlResult::merge(results))
       },
-    }
-  }
-}
-
-#[derive(Clone, Debug, Default, Args)]
-pub struct MedusaCrawlArgs {
-  /// File, directory, or symlink paths to traverse.
-  #[arg(short, long, default_values_t = vec![".".to_string()])]
-  pub paths_to_crawl: Vec<String>,
-  /// Regular expressions to filter out of any directory or file paths
-  /// encountered when crawling.
-  ///
-  /// These patterns will not read through symlinks.
-  #[arg(short, long, default_values_t = Vec::<RegexWrapper>::new())]
-  pub ignore_patterns: Vec<RegexWrapper>,
-}
-
-impl From<MedusaCrawlArgs> for MedusaCrawl {
-  fn from(x: MedusaCrawlArgs) -> Self {
-    let MedusaCrawlArgs {
-      paths_to_crawl,
-      ignore_patterns,
-    } = x;
-    let ignore_patterns = RegexSet::new(
-      ignore_patterns
-        .into_iter()
-        .map(|RegexWrapper(p)| p.as_str().to_string()),
-    )
-    .expect("constituent patterns were already validated");
-    Self {
-      paths_to_crawl: paths_to_crawl.into_iter().map(PathBuf::from).collect(),
-      ignores: Ignores::new(ignore_patterns),
     }
   }
 }

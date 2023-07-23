@@ -9,7 +9,6 @@
 
 //! ???
 
-use clap::ValueEnum;
 use displaydoc::Display;
 use parking_lot::Mutex;
 use thiserror::Error;
@@ -32,7 +31,7 @@ pub enum DestinationError {
   Join(#[from] task::JoinError),
 }
 
-#[derive(Copy, Clone, Default, Debug, ValueEnum)]
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub enum DestinationBehavior {
   /// Create the file if new, or truncate it if it exists.
   #[default]

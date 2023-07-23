@@ -12,7 +12,7 @@
 use crate::{
   destination::OutputWrapper,
   zip::{calculate_new_rightmost_components, DefaultInitializeZipOptions, ModifiedTimeBehavior},
-  EntryName, MedusaNameFormatError,
+  EntryName,
 };
 
 use displaydoc::Display;
@@ -28,7 +28,6 @@ use zip::{
 
 use std::{
   io::{Seek, Write},
-  mem,
   path::PathBuf,
 };
 
@@ -50,12 +49,6 @@ pub struct MergeGroup {
   pub sources: Vec<PathBuf>,
 }
 
-#[derive(Debug, Display, Error)]
-pub enum MergeArgParseError {
-  /// name formate error in entry: {0}
-  NameFormat(#[from] MedusaNameFormatError),
-}
-
 #[derive(Default, Debug, Clone)]
 pub struct MedusaMerge {
   pub groups: Vec<MergeGroup>,
@@ -69,51 +62,6 @@ pub enum IntermediateMergeEntry {
 const PARALLEL_MERGE_ENTRIES: usize = 10;
 
 impl MedusaMerge {
-  pub fn parse_from_args<R: AsRef<str>>(
-    args: impl Iterator<Item=R>,
-  ) -> Result<Self, MergeArgParseError> {
-    let mut ret: Vec<MergeGroup> = Vec::new();
-    /* Each prefix is itself legitimately an Option (to avoid EntryName being
-     * empty), so we wrap it again. */
-    let mut current_prefix: Option<Option<EntryName>> = None;
-    let mut current_sources: Vec<PathBuf> = Vec::new();
-    for arg in args {
-      let arg: &str = arg.as_ref();
-      /* If we are starting a new prefix: */
-      if arg.starts_with('+') && arg.ends_with('/') {
-        let new_prefix = &arg[1..arg.len() - 1];
-        let new_prefix: Option<EntryName> = if new_prefix.is_empty() {
-          None
-        } else {
-          Some(EntryName::validate(new_prefix.to_string())?)
-        };
-        if let Some(prefix) = current_prefix.take() {
-          let group = MergeGroup {
-            prefix,
-            sources: mem::take(&mut current_sources),
-          };
-          ret.push(group);
-        } else {
-          /* Only None on the very first iteration of the loop. */
-          assert!(current_sources.is_empty());
-        }
-        current_prefix = Some(new_prefix);
-      } else {
-        /* If no prefixes have been declared, assume they begin with an empty prefix. */
-        current_prefix.get_or_insert(None);
-        current_sources.push(PathBuf::from(arg));
-      }
-    }
-    if let Some(prefix) = current_prefix {
-      let group = MergeGroup {
-        prefix,
-        sources: current_sources,
-      };
-      ret.push(group);
-    }
-    Ok(Self { groups: ret })
-  }
-
   pub async fn merge<Output>(
     self,
     mtime_behavior: ModifiedTimeBehavior,

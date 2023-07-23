@@ -190,8 +190,6 @@ pub mod zip;
 
 pub mod merge;
 
-mod util;
-
 /* FIXME: add tests! */
 /* #[cfg(test)] */
 /* mod test { */
