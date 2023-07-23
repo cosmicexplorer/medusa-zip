@@ -48,7 +48,7 @@
 
 use libmedusa_zip as lib;
 
-use pyo3::{exceptions::PyValueError, intern, prelude::*};
+use pyo3::{exceptions::PyValueError, prelude::*};
 
 use std::path::PathBuf;
 
@@ -101,14 +101,10 @@ impl FileSource {
   fn new(name: EntryName, source: PathBuf) -> Self { Self { name, source } }
 
   fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-    let name = self.name.clone().into_py(py);
-    let name: String = name
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
-    Ok(format!(
-      "FileSource(name={}, source={:?})",
-      name, &self.source
-    ))
+    let Self { name, source } = self;
+    let name = crate::util::repr(py, name.clone())?;
+    let source = crate::util::repr(py, source.clone())?;
+    Ok(format!("FileSource(name={}, source={})", name, source))
   }
 }
 
@@ -170,8 +166,9 @@ fn pymedusa_zip(py: Python<'_>, medusa_zip: &PyModule) -> PyResult<()> {
   Ok(())
 }
 
-
 mod crawl;
 mod destination;
 mod merge;
 mod zip;
+
+mod util;

@@ -9,7 +9,7 @@
 
 //! ???
 
-use crate::{destination::ZipFileWriter, zip::ModifiedTimeBehavior, EntryName};
+use crate::{destination::ZipFileWriter, util::repr, zip::ModifiedTimeBehavior, EntryName};
 
 use libmedusa_zip::{self as lib, merge as lib_merge, zip as lib_zip};
 
@@ -59,14 +59,8 @@ impl MergeGroup {
 
   fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
     let Self { prefix, sources } = self;
-    let prefix = prefix.clone().into_py(py);
-    let sources = sources.clone().into_py(py);
-    let prefix: String = prefix
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
-    let sources: String = sources
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
+    let prefix = repr(py, prefix.clone())?;
+    let sources = repr(py, sources.clone())?;
     Ok(format!(
       "MergeGroup(prefix={}, sources={})",
       prefix, sources
@@ -116,10 +110,7 @@ impl MedusaMerge {
 
   fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
     let Self { groups } = self;
-    let groups = groups.clone().into_py(py);
-    let groups: String = groups
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
+    let groups = repr(py, groups.clone())?;
     Ok(format!("MedusaMerge(groups={})", groups))
   }
 

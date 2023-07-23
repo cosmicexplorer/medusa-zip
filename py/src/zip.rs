@@ -9,13 +9,12 @@
 
 //! ???
 
-use crate::{destination::ZipFileWriter, FileSource};
+use crate::{destination::ZipFileWriter, util::repr, FileSource};
 
 use libmedusa_zip::{self as lib, zip as lib_zip};
 
 use pyo3::{
   exceptions::{PyException, PyValueError},
-  intern,
   prelude::*,
   types::PyType,
 };
@@ -124,20 +123,14 @@ impl ModifiedTimeBehavior {
     } = self;
     match explicit_mtime_timestamp {
       None => {
-        let automatic_mtime_strategy = automatic_mtime_strategy.into_py(py);
-        let automatic_mtime_strategy: String = automatic_mtime_strategy
-          .call_method0(py, intern!(py, "__repr__"))?
-          .extract(py)?;
+        let automatic_mtime_strategy = repr(py, *automatic_mtime_strategy)?;
         Ok(format!(
           "ModifiedTimeBehavior.automatic({})",
           automatic_mtime_strategy
         ))
       },
       Some(explicit_mtime_timestamp) => {
-        let explicit_mtime_timestamp = explicit_mtime_timestamp.clone().into_py(py);
-        let explicit_mtime_timestamp: String = explicit_mtime_timestamp
-          .call_method0(py, intern!(py, "__repr__"))?
-          .extract(py)?;
+        let explicit_mtime_timestamp = repr(py, explicit_mtime_timestamp.clone())?;
         Ok(format!(
           "ModifiedTimeBehavior.explicit({})",
           explicit_mtime_timestamp
@@ -266,14 +259,8 @@ impl CompressionOptions {
 
   fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
     let Self { method, level } = self;
-    let method = method.into_py(py);
-    let level = level.into_py(py);
-    let method: String = method
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
-    let level: String = level
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
+    let method = repr(py, *method)?;
+    let level = repr(py, *level)?;
     Ok(format!(
       "CompressionOptions(method={}, level={})",
       method, level
@@ -346,14 +333,8 @@ impl ZipOutputOptions {
       mtime_behavior,
       compression_options,
     } = self;
-    let mtime_behavior = mtime_behavior.clone().into_py(py);
-    let compression_options = compression_options.clone().into_py(py);
-    let mtime_behavior: String = mtime_behavior
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
-    let compression_options: String = compression_options
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
+    let mtime_behavior = repr(py, mtime_behavior.clone())?;
+    let compression_options = repr(py, compression_options.clone())?;
     Ok(format!(
       "ZipOutputOptions(mtime_behavior={}, compression_options={})",
       mtime_behavior, compression_options
@@ -543,23 +524,10 @@ impl MedusaZip {
       modifications,
       parallelism,
     } = self;
-    /* FIXME: make a wrapper for this! */
-    let input_files = input_files.clone().into_py(py);
-    let zip_options = zip_options.clone().into_py(py);
-    let modifications = modifications.clone().into_py(py);
-    let parallelism = parallelism.into_py(py);
-    let input_files: String = input_files
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
-    let zip_options: String = zip_options
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
-    let modifications: String = modifications
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
-    let parallelism: String = parallelism
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
+    let input_files = repr(py, input_files.clone())?;
+    let zip_options = repr(py, zip_options.clone())?;
+    let modifications = repr(py, modifications.clone())?;
+    let parallelism = repr(py, *parallelism)?;
     Ok(format!(
       "MedusaZip(input_files={}, zip_options={}, modifications={}, parallelism={})",
       input_files, zip_options, modifications, parallelism

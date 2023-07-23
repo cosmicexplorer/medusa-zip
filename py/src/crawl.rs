@@ -9,13 +9,15 @@
 
 //! ???
 
-use crate::zip::{EntryModifications, MedusaZip, Parallelism, ZipOutputOptions};
+use crate::{
+  util::repr,
+  zip::{EntryModifications, MedusaZip, Parallelism, ZipOutputOptions},
+};
 
 use libmedusa_zip::{crawl as lib_crawl, zip as lib_zip};
 
 use pyo3::{
   exceptions::{PyException, PyValueError},
-  intern,
   prelude::*,
   types::PyType,
 };
@@ -222,13 +224,15 @@ impl MedusaCrawl {
   }
 
   fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-    let ignores = self.ignores.clone().into_py(py);
-    let ignores: String = ignores
-      .call_method0(py, intern!(py, "__repr__"))?
-      .extract(py)?;
+    let Self {
+      paths_to_crawl,
+      ignores,
+    } = self;
+    let paths_to_crawl = repr(py, paths_to_crawl.clone())?;
+    let ignores = repr(py, ignores.clone())?;
     Ok(format!(
-      "MedusaCrawl(paths_to_crawl={:?}, ignores={})",
-      &self.paths_to_crawl, ignores
+      "MedusaCrawl(paths_to_crawl={}, ignores={})",
+      paths_to_crawl, ignores
     ))
   }
 
