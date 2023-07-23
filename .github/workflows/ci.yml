@@ -157,9 +157,9 @@ jobs:
     #   with:
     #     key: v1
 
-    - name: build sdist
-      if: ${{ matrix.os == 'ubuntu' }}
-      run: python setup.py sdist
+    # - name: build sdist
+    #   if: ${{ matrix.os == 'ubuntu' }}
+    #   run: python setup.py sdist
 
     - name: build wheels
       uses: pypa/cibuildwheel@v2.14.1
