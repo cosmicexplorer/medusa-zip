@@ -58,7 +58,7 @@ container-engine = "podman"
 before-all = "curl https://sh.rustup.rs -sSf | sh -s -- -y"
 environment = { PATH="$HOME/.cargo/bin:$PATH" }
 build-verbosity = 3
-skip = ["cp37-*", "cp38-*", "cp39-*", "cp310-*", "pp*", "*musllinux*"]
+# skip = ["cp37-*", "cp38-*", "cp39-*", "cp310-*", "pp*", "*musllinux*"]
 
 [tool.cibuildwheel.linux]
 archs = ["auto64"]
