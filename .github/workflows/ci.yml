@@ -30,8 +30,8 @@ jobs:
 
     - run: pip install --upgrade pip
 
-    - name: install rust stable
-      uses: dtolnay/rust-toolchain@stable
+    - name: install rust nightly
+      uses: dtolnay/rust-toolchain@nightly
 
     - id: cache-rust
       name: cache rust
@@ -56,8 +56,8 @@ jobs:
 
     - run: pip install --upgrade pip
 
-    - name: install rust
-      uses: dtolnay/rust-toolchain@stable
+    - name: install rust nightly
+      uses: dtolnay/rust-toolchain@nightly
       with:
         components: rustfmt, clippy
 
