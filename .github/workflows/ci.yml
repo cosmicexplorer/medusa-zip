@@ -170,6 +170,7 @@ jobs:
       with:
         name: bdists-artifact
         path: ./wheelhouse/*.whl
+        if-no-files-found: error
 
   # inspect-pypi-assets:
   #   needs: [build]
