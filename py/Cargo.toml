@@ -18,9 +18,7 @@ crate-type              = ["cdylib"]
 libmedusa-zip           = { path = "../lib" }
 once_cell               = { version = "1", optional = true }
 pyo3                    = { version = "0.19", features = ["extension-module"] }
-pyo3-asyncio            = { git = "https://github.com/awestlake87/pyo3-asyncio", rev = "0ce6d6dbad3668f98553f0d3b9c350e5f42a1996", features = ["tokio-runtime"], optional = true }
-# FIXME: this will be released on crates.io any day now:
-# pyo3-asyncio            = { version = "0.19", features = ["tokio-runtime"] }
+pyo3-asyncio            = { version = "0.19", features = ["tokio-runtime"], optional = true }
 regex.workspace         = true
 time.workspace          = true
 tokio                   = { workspace = true, features = ["rt", "rt-multi-thread"] }

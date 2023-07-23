@@ -924,7 +924,8 @@ dependencies = [
 [[package]]
 name = "pyo3-asyncio"
 version = "0.19.0"
-source = "git+https://github.com/awestlake87/pyo3-asyncio?rev=0ce6d6dbad3668f98553f0d3b9c350e5f42a1996#0ce6d6dbad3668f98553f0d3b9c350e5f42a1996"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2cc34c1f907ca090d7add03dc523acdd91f3a4dab12286604951e2f5152edad"
 dependencies = [
  "futures",
  "once_cell",
