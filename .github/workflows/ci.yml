@@ -52,6 +52,7 @@ jobs:
         python-version: '3.10'
 
     - run: pip install --upgrade pip
+
     - name: install rust nightly
       uses: dtolnay/rust-toolchain@nightly
 
@@ -75,8 +76,11 @@ jobs:
         python-version: '3.10'
 
     - run: pip install --upgrade pip
+
     - name: install rust nightly
       uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: rustfmt, clippy
 
     - id: cache-rust
       name: cache rust
