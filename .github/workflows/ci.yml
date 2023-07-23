@@ -148,14 +148,14 @@ jobs:
 
     - run: pip install --upgrade pip
 
-    - name: install rust stable
-      uses: dtolnay/rust-toolchain@stable
+    # - name: install rust stable
+    #   uses: dtolnay/rust-toolchain@stable
 
-    - id: cache-rust
-      name: cache rust
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: v1
+    # - id: cache-rust
+    #   name: cache rust
+    #   uses: Swatinem/rust-cache@v2
+    #   with:
+    #     key: v1
 
     - name: build sdist
       if: ${{ matrix.os == 'ubuntu' && matrix.target == 'x86_64' && matrix.manylinux == 'auto' }}
