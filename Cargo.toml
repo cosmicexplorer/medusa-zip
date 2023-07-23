@@ -37,6 +37,7 @@ categories              = ["development-tools::build-utils", "filesystem", "asyn
 homepage                = "https://github.com/cosmicexplorer/medusa-zip"
 repository              = "https://github.com/cosmicexplorer/medusa-zip"
 
-[profile.release]
-strip                   = true
-lto                     = true
+# FIXME: uncomment this when the build starts working!
+# [profile.release]
+# strip                   = true
+# lto                     = true
