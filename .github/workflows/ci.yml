@@ -16,6 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.7', '3.8', '3.9', '3.10', '3.11']
+        rust-toolchain: ['stable', 'nightly']
 
     env:
       PYTHON: ${{ matrix.python-version }}
@@ -30,8 +31,10 @@ jobs:
 
     - run: pip install --upgrade pip
 
-    - name: install rust nightly
-      uses: dtolnay/rust-toolchain@nightly
+    - name: install rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust-toolchain }}
 
     - id: cache-rust
       name: cache rust
