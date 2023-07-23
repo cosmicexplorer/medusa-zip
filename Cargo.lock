@@ -502,7 +502,7 @@ checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 
 [[package]]
 name = "libmedusa-zip"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "async-recursion",
  "cfg-if",
@@ -518,7 +518,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
- "zip",
+ "zip-merge",
 ]
 
 [[package]]
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "medusa-zip"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "clap",
  "displaydoc",
@@ -557,7 +557,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
- "zip",
+ "zip-merge",
 ]
 
 [[package]]
@@ -720,7 +720,7 @@ dependencies = [
 
 [[package]]
 name = "pymedusa-zip"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "libmedusa-zip",
  "once_cell",
@@ -729,7 +729,7 @@ dependencies = [
  "regex",
  "time",
  "tokio",
- "zip",
+ "zip-merge",
 ]
 
 [[package]]
@@ -1267,9 +1267,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "zip"
+name = "zip-merge"
 version = "0.6.6"
-source = "git+https://github.com/cosmicexplorer/zip?rev=8ca0ed7041fc2bb44aca16053c4f6d20631a627e#8ca0ed7041fc2bb44aca16053c4f6d20631a627e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c62dce8b9c279b4862237f58ebbbd313870a6b4b520561592af6907b023dc99"
 dependencies = [
  "byteorder",
  "cfg-if",

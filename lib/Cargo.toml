@@ -10,6 +10,7 @@ keywords.workspace      = true
 categories.workspace    = true
 homepage.workspace      = true
 repository.workspace    = true
+description             = "High-performance parallelized implementations of common zip file operations."
 
 [dependencies]
 async-recursion         = "1"

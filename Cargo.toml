@@ -19,11 +19,9 @@ time                    = { version = "0.3.23", features = ["local-offset", "par
 tokio                   = "1.29"
 
 [workspace.dependencies.zip]
-# path = "/home/cosmicexplorer/tools/zip"
-git                     = "https://github.com/cosmicexplorer/zip"
-rev                     = "8ca0ed7041fc2bb44aca16053c4f6d20631a627e"
+version                 = "0.6.6"
+package                 = "zip-merge"
 default-features        = false
-# TODO: consider aes, bzip2, zstd support?
 features                = ["deflate", "time", "rayon", "merge"]
 
 [workspace.package]
@@ -32,12 +30,11 @@ authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 edition                 = "2021"
 license                 = "Apache-2.0"
 
-keywords                = ["zip", "file", "archive", "parallel", "i/o"]
+keywords                = ["zip", "file", "archive", "parallel", "io"]
 categories              = ["development-tools::build-utils", "filesystem", "asynchronous", "caching"]
 homepage                = "https://github.com/cosmicexplorer/medusa-zip"
 repository              = "https://github.com/cosmicexplorer/medusa-zip"
 
-# FIXME: uncomment this when the build starts working!
-# [profile.release]
-# strip                   = true
-# lto                     = true
+[profile.release]
+strip                   = true
+lto                     = true
