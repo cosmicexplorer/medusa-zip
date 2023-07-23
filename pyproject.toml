@@ -52,3 +52,7 @@ build-backend = "setuptools.build_meta"
 profile = "hug"
 src_paths = ["py"]
 lines_after_imports = 2
+
+[tool.cibuildwheel]
+container-engine = "podman"
+environment = { PATH="$HOME/.cargo/bin:$PATH" }
