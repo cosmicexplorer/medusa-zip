@@ -213,7 +213,6 @@ mod cli {
 
             /* Read json serialization from stdin. */
             let mut input_json: Vec<u8> = Vec::new();
-            /* FIXME: convert this into *lines* of ResolvedPath (or something better)!! */
             io::stdin().read_to_end(&mut input_json).await?;
             let crawl_result: CrawlResult = serde_json::from_slice(&input_json)?;
             let crawl_result: LibCrawlResult = crawl_result.into();
@@ -226,7 +225,6 @@ mod cli {
             )?;
 
             /* Do the parallel zip!!! */
-            /* TODO: log the file output! */
             let _output_file_handle = crawled_zip.zip(output_zip).await?;
           },
           Command::Merge {
@@ -239,7 +237,6 @@ mod cli {
 
             let merge_spec: MedusaMerge = merge.try_into()?;
             /* Copy over constituent zips into current. */
-            /* TODO: log the file output! */
             let _output_file_handle = merge_spec.merge(mtime_behavior.into(), output_zip).await?;
           },
           Command::CrawlZip {
@@ -264,7 +261,6 @@ mod cli {
             )?;
 
             /* Do the parallel zip over the crawled files!!! */
-            /* TODO: log the file output! */
             let _output_file_handle = crawled_zip.zip(output_zip).await?;
           },
           Command::ZipMerge {
@@ -295,7 +291,6 @@ mod cli {
 
             let merge_spec: MedusaMerge = merge.try_into()?;
             /* Copy over constituent zips into current. */
-            /* TODO: log the file output! */
             let _output_file_handle = merge_spec
               .merge(zip_options.mtime_behavior.into(), output_zip_file_handle)
               .await?;
@@ -326,7 +321,6 @@ mod cli {
 
             let merge_spec: MedusaMerge = merge.try_into()?;
             /* Copy over constituent zips into current. */
-            /* TODO: log the file output! */
             let _output_file_handle = merge_spec
               .merge(zip_options.mtime_behavior.into(), output_zip_file_handle)
               .await?;

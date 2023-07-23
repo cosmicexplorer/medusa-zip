@@ -65,8 +65,6 @@ impl MedusaMerge {
   pub async fn merge<Output>(
     self,
     mtime_behavior: ModifiedTimeBehavior,
-    /* FIXME: make a trait that's like BorrowMut, but doesn't require needing a mutable
-     * reference (?) */
     output_zip: OutputWrapper<ZipWriter<Output>>,
   ) -> Result<OutputWrapper<ZipWriter<Output>>, MedusaMergeError>
   where

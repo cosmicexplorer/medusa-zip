@@ -12,7 +12,6 @@ default-members         = [
 resolver                = "2"
 
 [workspace.dependencies]
-# FIXME: remove this or at least make it an optional dep for the lib.
 displaydoc              = "0.2.4"
 regex                   = "1"
 thiserror               = "1.0.30"

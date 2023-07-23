@@ -282,7 +282,7 @@ impl From<lib_zip::CompressionStrategy> for CompressionOptions {
   fn from(x: lib_zip::CompressionStrategy) -> Self {
     let (method, level) = match x {
       lib_zip::CompressionStrategy::Stored => (CompressionMethod::Stored, None),
-      /* FIXME: avoid unchecked cast here! */
+      /* TODO: avoid unchecked cast here! */
       lib_zip::CompressionStrategy::Deflated(level) => {
         (CompressionMethod::Deflated, level.map(|l| l as i8))
       },
