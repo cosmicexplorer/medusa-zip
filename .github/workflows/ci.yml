@@ -11,15 +11,12 @@ on:
 jobs:
   test-py:
     name: test ${{ matrix.python-version }} on ${{ matrix.os }}
-    # name: test ${{ matrix.python-version }}
     strategy:
       fail-fast: true
       matrix:
-        # os: [ubuntu, macos]
-        os: [ubuntu]
+        os: [ubuntu, macos]
         python-version: ['3.7', '3.8', '3.9', '3.10', '3.11']
     runs-on: ${{ matrix.os }}-latest
-    # runs-on: ubuntu-latest
 
     env:
       PYTHON: ${{ matrix.python-version }}
@@ -190,10 +187,9 @@ jobs:
           if-no-files-found: error
 
   build-bdists-ubuntu:
-    name: build bdists for ${{ matrix.python-version }}/${{ matrix.py-impl }}/${{ matrix.libc-type }} on linux
+    name: build bdist for ${{ matrix.python-version }}/${{ matrix.py-impl }}/${{ matrix.libc-type }} on linux
     # run on releases, and on PRs with the label 'Full Build'
     if: success() && (startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'Full Build'))
-    needs: [check]
     strategy:
       fail-fast: true
       matrix:
@@ -235,7 +231,6 @@ jobs:
     name: build bdist for ${{ matrix.python-version }}/${{ matrix.py-impl }} on macos x86_64
     # run on releases, and on PRs with the label 'Full Build'
     if: success() && (startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'Full Build'))
-    needs: [check]
     strategy:
       fail-fast: true
       matrix:
@@ -273,7 +268,6 @@ jobs:
     name: build bdist for ${{ matrix.python-version }}/${{ matrix.py-impl }} on macos arm64
     # run on releases, and on PRs with the label 'Full Build'
     if: success() && (startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'Full Build'))
-    needs: [check]
     strategy:
       fail-fast: true
       matrix:
@@ -281,7 +275,8 @@ jobs:
         # See https://cibuildwheel.readthedocs.io/en/stable/faq/#how-to-cross-compile
         python-version: ['38', '39', '310', '311']
         py-impl: ['cp']
-        # PyPy currently cannot be built for arm64 on macos!
+        # PyPy currently cannot be built for arm64 on macos! We get this extremely obtuse and frustrating error when we try:
+        # https://github.com/pypa/cibuildwheel/blob/4135c0a01dc11910ce118f58acc7caf4ac5c524a/cibuildwheel/macos.py#L92-L112
         # py-impl: ['cp', 'pp']
         # exclude:
         #   # PyPy only goes up to 3.10: https://cibuildwheel.readthedocs.io/en/stable/options/#build-skip.
@@ -317,7 +312,7 @@ jobs:
     name: upload it to pypi
     # NB: we have decided that releases are tags starting with a 'v'!
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [build-sdist, build-bdists-ubuntu, build-bdists-macos-x86_64, build-bdists-macos-arm64]
+    needs: [check, build-sdist, build-bdists-ubuntu, build-bdists-macos-x86_64, build-bdists-macos-arm64]
     environment: pypi
     runs-on: ubuntu-latest
     permissions:
