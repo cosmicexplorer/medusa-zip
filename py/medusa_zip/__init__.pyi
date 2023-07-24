@@ -9,7 +9,7 @@ from pathlib import Path, Union
 
 
 class EntryName:
-  def __init__(self, name: str) -> None: ...
+  def __init__(self, name: str, /) -> None: ...
 
 
 class FileSource:
