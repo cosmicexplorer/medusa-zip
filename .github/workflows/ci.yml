@@ -239,6 +239,11 @@ jobs:
       uses: pypa/cibuildwheel@v2.14.1
       env:
         CIBW_ARCHS_MACOS: x86_64 arm64
+        # This target isn't added by the rustup command in tool.cibuildwheel.before-all.
+        CIBW_BEFORE_ALL_MACOS: rustup target add aarch64-apple-darwin
+        # "Only CPython 3.8 and newer support universal2 and arm64 wheels."
+        # See https://cibuildwheel.readthedocs.io/en/stable/faq/#how-to-cross-compile
+        CIBW_SKIP: cp37-*
 
     - uses: actions/upload-artifact@v3
       with:
