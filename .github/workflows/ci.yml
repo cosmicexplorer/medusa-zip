@@ -162,15 +162,18 @@ jobs:
     - run: pip install -r build-requires.txt
 
     - run: git describe --tags --abbrev=0 > latest-tag.version
-    - run: printf 'v%s\n' "$(python setup.py --dry-run --version)" > py.version
-    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "libmedusa-zip") | "v" + .version' > rust-lib.version
-    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "pymedusa-zip") | "v" + .version' > py-lib.version
-    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "medusa-zip") | "v" + .version' > cli.version
+    - run: printf 'v%s\n' "$(python setup.py --dry-run --version 2>/dev/null)" > pypi-medusa-zip.version
+    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "libmedusa-zip") | "v" + .version' > libmedusa-zip.version
+    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "pymedusa-zip") | "v" + .version' > pymedusa-zip.version
+    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "medusa-zip") | "v" + .version' > cli-medusa-zip.version
 
     - run: |
         num_separate_versions="$(cat *.version | sort -u | wc -l)"
         if [[ "$num_separate_versions" -gt 1 ]]; then
-          printf '%s\n' '::error::versions are out of sync:' $(cat *.version)
+          echo '::error::versions are out of sync:'
+          for f in *.version; do
+            echo "::error::${f} => $(cat "$f")"
+          done
           exit 1
         fi
 
