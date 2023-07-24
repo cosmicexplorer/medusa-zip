@@ -10,15 +10,15 @@ on:
 
 jobs:
   test-py:
-    # name: test ${{ matrix.python-version }} rust ${{ matrix.rust-toolchain }} on ${{ matrix.os }}
-    name: test ${{ matrix.python-version }}
+    name: test ${{ matrix.python-version }} rust ${{ matrix.rust-toolchain }} on ${{ matrix.os }}
+    # name: test ${{ matrix.python-version }}
     strategy:
       fail-fast: true
       matrix:
-        # os: [ubuntu, macos]
+        os: [ubuntu, macos]
         python-version: ['3.7', '3.8', '3.9', '3.10', '3.11']
-    # runs-on: ${{ matrix.os }}-latest
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}-latest
+    # runs-on: ubuntu-latest
 
     env:
       PYTHON: ${{ matrix.python-version }}
