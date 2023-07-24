@@ -502,7 +502,7 @@ checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 
 [[package]]
 name = "libmedusa-zip"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "async-recursion",
  "cfg-if",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "medusa-zip"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "clap",
  "displaydoc",
@@ -720,7 +720,7 @@ dependencies = [
 
 [[package]]
 name = "pymedusa-zip"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "libmedusa-zip",
  "once_cell",
