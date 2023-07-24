@@ -1,6 +1,6 @@
 [project]
 name = "medusa-zip"
-version = "0.0.5"
+version = "0.0.6"
 description = "High-performance parallelized implementations of common zip file operations."
 license = {text = "Apache-2.0"}
 readme = "py/README.md"

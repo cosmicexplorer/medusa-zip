@@ -14,7 +14,8 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu, macos, windows]
+        # os: [ubuntu, macos, windows]
+        os: [ubuntu]
         python-version: ['3.7', '3.8', '3.9', '3.10', '3.11']
     runs-on: ${{ matrix.os }}-latest
 
@@ -309,7 +310,7 @@ jobs:
         if-no-files-found: error
 
   build-bdists-windows:
-    name: build bdist for ${{ matrix.python-version }}/${{ matrix.py-impl }} on windows
+    name: build bdist for ${{ matrix.python-version }}/${{ matrix.py-impl }}/${{ matrix.arch }} on windows
     # run on releases, and on PRs with the label 'Full Build'
     if: success() && (startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'Full Build'))
     strategy:
@@ -317,19 +318,22 @@ jobs:
       matrix:
         python-version: ['37', '38', '39', '310', '311']
         py-impl: ['cp', 'pp']
-        arch: ['amd64', 'arm64']
+        arch: ['AMD64']
+        # FIXME: figure out how to get ARM64 windows builds working!
+        # arch: ['AMD64', 'ARM64']
         exclude:
           # PyPy only goes up to 3.10: https://cibuildwheel.readthedocs.io/en/stable/options/#build-skip.
           - py-impl: pp
             python-version: 311
-          # Windows does not support arm64 until 3.8: https://cibuildwheel.readthedocs.io/en/stable/options/#build-skip.
-          - python-version: 37
-            arch: arm64
-          - python-version: 38
-            arch: arm64
-          # Windows PyPy does not support arm64: https://cibuildwheel.readthedocs.io/en/stable/options/#build-skip.
-          - py-impl: pp
-            arch: arm64
+          # FIXME: figure out how to get ARM64 windows builds working!
+          # Windows does not support ARM64 until 3.8: https://cibuildwheel.readthedocs.io/en/stable/options/#build-skip.
+          # - python-version: 37
+          #   arch: ARM64
+          # - python-version: 38
+          #   arch: ARM64
+          # # Windows PyPy does not support ARM64: https://cibuildwheel.readthedocs.io/en/stable/options/#build-skip.
+          # - py-impl: pp
+          #   arch: ARM64
     runs-on: windows-latest
 
     steps:
@@ -340,13 +344,12 @@ jobs:
       with:
         python-version: 3.11
 
-    - run: pip install --upgrade pip
-
     - name: build wheels
       uses: pypa/cibuildwheel@v2.14.1
       env:
-        CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+        CIBW_ARCHS_WINDOWS: ${{ matrix.arch }}
         CIBW_BUILD: ${{ matrix.py-impl }}${{ matrix.python-version }}-win_${{ matrix.arch }}
+        # CIBW_BEFORE_ALL: "rmdir C:\\Users\\runneradmin\\.cargo /s /q && curl.exe --url https://static.rust-lang.org/rustup/dist/i686-pc-windows-gnu/rustup-init.exe --output rustup-init.exe && .\\rustup-init.exe --default-toolchain nightly --default-host aarch64-pc-windows-msvc -y && rustup.exe target add aarch64-pc-windows-msvc"
 
     - uses: actions/upload-artifact@v3
       with:
