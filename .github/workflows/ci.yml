@@ -39,7 +39,7 @@ jobs:
         key: v1
 
     # TODO: some actual testing!
-    - run: pip install -e .
+    - run: pip install -vvv -e .
 
   test-rust:
     name: test against ${{ matrix.rust-toolchain }} rust
