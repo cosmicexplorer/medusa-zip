@@ -177,7 +177,8 @@ jobs:
   build-bdists:
     name: build bdists for many pythons in a row on ${{ matrix.os }}
     # run on releases, and on PRs with the label 'Full Build'
-    if: "success() && (startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'Full Build'))"
+    if: success() && (startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'Full Build'))
+    needs: [check]
     strategy:
       fail-fast: false
       matrix:
@@ -208,6 +209,7 @@ jobs:
 
   upload-pypi-assets:
     name: upload it to pypi
+    # NB: we have decided that releases are tags starting with a 'v'!
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [build-sdist, build-bdists]
     environment: pypi
@@ -216,18 +218,43 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v3
+    - uses: actions/checkout@v3
 
-      - name: get sdist artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: sdist-artifact
-          path: dist
+    - name: get sdist artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: sdist-artifact
+        path: dist
 
-      - name: get bdist artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: bdists-artifact
-          path: dist
+    - name: get bdist artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: bdists-artifact
+        path: dist
 
-      - uses: pypa/gh-action-pypi-publish@release/v1
+    - uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-cargo-packages:
+    name: publish cargo packages
+    # NB: we have decided that releases are tags starting with a 'v'!
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [check]
+    environment: crates-io
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: install rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+    - id: cache-rust-publish
+      name: cache rust
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: v1
+
+    - env:
+        CARGO_REGISTRY_TOKEN: ${{ secrets.MEDUSA_ONLY_TOKEN }}
+      run: |
+        cargo publish -p libmedusa-zip
+        cargo publish -p pymedusa-zip
+        cargo publish -p medusa-zip
