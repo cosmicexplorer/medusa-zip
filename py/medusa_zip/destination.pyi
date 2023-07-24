@@ -5,8 +5,8 @@
 #
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-from pathlib import Path, Union
-from typing import Any
+from pathlib import Path
+from typing import Any, Union
 
 
 class ZipFileWriter:

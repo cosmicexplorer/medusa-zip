@@ -5,7 +5,8 @@
 #
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-from pathlib import Path, Union
+from pathlib import Path
+from typing import Union
 
 
 class EntryName:
