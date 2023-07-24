@@ -14,7 +14,11 @@ from .zip import ModifiedTimeBehavior
 
 
 class MergeGroup:
-  def __init__(self, prefix: Optional[Union[str, EntryName]], sources: Iterable[Path]) -> None:
+  def __init__(
+    self,
+    prefix: Optional[Union[str, EntryName]],
+    sources: Iterable[Union[str, Path]],
+  ) -> None:
     ...
 
   @property

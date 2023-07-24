@@ -5,7 +5,7 @@
 #
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-from pathlib import Path
+from pathlib import Path, Union
 from typing import Any
 
 
@@ -37,8 +37,8 @@ class DestinationBehavior:
   @classmethod
   def default(cls) -> 'DestinationBehavior': ...
 
-  async def initialize(self, path: Path) -> ZipFileWriter:
+  async def initialize(self, path: Union[str, Path]) -> ZipFileWriter:
     ...
 
-  def initialize_sync(self, path: Path) -> ZipFileWriter:
+  def initialize_sync(self, path: Union[str, Path]) -> ZipFileWriter:
     ...

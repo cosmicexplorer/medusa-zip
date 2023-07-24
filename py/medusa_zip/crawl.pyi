@@ -6,13 +6,13 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Union
 
 from .zip import EntryModifications, MedusaZip, Parallelism, ZipOutputOptions
 
 
 class ResolvedPath:
-  def __init__(self, *, unresolved_path: Path, resolved_path: Path) -> None:
+  def __init__(self, *, unresolved_path: Union[str, Path], resolved_path: Union[str, Path]) -> None:
     ...
 
   @property
@@ -46,7 +46,11 @@ class Ignores:
 
 
 class MedusaCrawl:
-  def __init__(self, paths_to_crawl: Iterable[Path], ignores: Optional[Ignores] = None) -> None:
+  def __init__(
+    self,
+    paths_to_crawl: Iterable[Union[str, Path]],
+    ignores: Optional[Ignores] = None,
+  ) -> None:
     ...
 
   @property

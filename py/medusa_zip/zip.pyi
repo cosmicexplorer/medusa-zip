@@ -143,8 +143,8 @@ class MedusaZip:
   ) -> None:
     ...
 
-  async def zip(output_zip: ZipFileWriter) -> ZipFileWriter:
+  async def zip(self, output_zip: ZipFileWriter) -> ZipFileWriter:
     ...
 
-  def zip_sync(output_zip: ZipFileWriter) -> ZipFileWriter:
+  def zip_sync(self, output_zip: ZipFileWriter) -> ZipFileWriter:
     ...

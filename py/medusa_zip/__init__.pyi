@@ -5,15 +5,15 @@
 #
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-from pathlib import Path
+from pathlib import Path, Union
 
 
 class EntryName:
-  def __init__(self, name: str, /) -> None: ...  # type: ignore[syntax]
+  def __init__(self, name: str) -> None: ...
 
 
 class FileSource:
-  def __init__(self, name: EntryName, source: Path) -> None: ...
+  def __init__(self, name: EntryName, source: Union[str, Path]) -> None: ...
 
   @property
   def name(self) -> EntryName: ...
