@@ -215,12 +215,6 @@ jobs:
 
     - run: pip install --upgrade pip
 
-    - id: cache-rust-ubuntu-bdist
-      name: cache rust
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: v1
-
     - name: build wheels
       uses: pypa/cibuildwheel@v2.14.1
       env:
@@ -257,12 +251,6 @@ jobs:
         python-version: 3.11
 
     - run: pip install --upgrade pip
-
-    - id: cache-rust-macos-bdist
-      name: cache rust
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: v1
 
     - name: build wheels
       uses: pypa/cibuildwheel@v2.14.1
@@ -305,12 +293,6 @@ jobs:
         python-version: 3.11
 
     - run: pip install --upgrade pip
-
-    - id: cache-rust-macos-bdist
-      name: cache rust
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: v1
 
     - name: build wheels
       uses: pypa/cibuildwheel@v2.14.1
@@ -360,12 +342,6 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: 3.11
-
-    - id: cache-rust-windows-bdist
-      name: cache rust
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: v1
 
     - name: build wheels
       uses: pypa/cibuildwheel@v2.14.1
