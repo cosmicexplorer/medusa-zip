@@ -1,6 +1,6 @@
 [project]
 name = "medusa-zip"
-version = "0.0.4"
+version = "0.0.5"
 description = "High-performance parallelized implementations of common zip file operations."
 license = {text = "Apache-2.0"}
 readme = "py/README.md"
@@ -18,7 +18,7 @@ classifiers = [
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
+  # "Programming Language :: Python :: 3.12",
   "Programming Language :: Rust",
   "Operating System :: POSIX",
   "Operating System :: MacOS :: MacOS X",

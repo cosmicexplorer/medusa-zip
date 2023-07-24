@@ -15,7 +15,8 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu, macos]
+        # os: [ubuntu, macos]
+        os: [ubuntu]
         python-version: ['3.7', '3.8', '3.9', '3.10', '3.11']
     runs-on: ${{ matrix.os }}-latest
     # runs-on: ubuntu-latest
@@ -196,7 +197,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        python-version: ['37', '38', '39', '310', '311', '312']
+        python-version: ['37', '38', '39', '310', '311']
         py-impl: ['cp', 'pp']
         libc-type: ['manylinux', 'musllinux']
         exclude:
@@ -205,7 +206,7 @@ jobs:
             libc-type: musllinux
           # PyPy only goes up to 3.10: https://cibuildwheel.readthedocs.io/en/stable/options/#build-skip.
           - py-impl: pp
-            python-version: ['311', '312']
+            python-version: 311
     runs-on: ubuntu-latest
 
     steps:
@@ -222,7 +223,7 @@ jobs:
       uses: pypa/cibuildwheel@v2.14.1
       env:
         CIBW_ARCHS_LINUX: x86_64
-        CIBW_BUILD: ${{ matrix.py-impl }}${{ matrix.python-version }}*${{ matrix.libc-type }}*
+        CIBW_BUILD: ${{ matrix.py-impl }}${{ matrix.python-version }}-${{ matrix.libc-type }}*
 
     - uses: actions/upload-artifact@v3
       with:
@@ -238,12 +239,12 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        python-version: ['37', '38', '39', '310', '311', '312']
+        python-version: ['37', '38', '39', '310', '311']
         py-impl: ['cp', 'pp']
         exclude:
           # PyPy only goes up to 3.10: https://cibuildwheel.readthedocs.io/en/stable/options/#build-skip.
           - py-impl: pp
-            python-version: ['311', '312']
+            python-version: 311
     runs-on: macos-latest
 
     steps:
@@ -278,12 +279,14 @@ jobs:
       matrix:
         # "Only CPython 3.8 and newer support universal2 and arm64 wheels."
         # See https://cibuildwheel.readthedocs.io/en/stable/faq/#how-to-cross-compile
-        python-version: ['38', '39', '310', '311', '312']
-        py-impl: ['cp', 'pp']
-        exclude:
-          # PyPy only goes up to 3.10: https://cibuildwheel.readthedocs.io/en/stable/options/#build-skip.
-          - py-impl: pp
-            python-version: ['311', '312']
+        python-version: ['38', '39', '310', '311']
+        py-impl: ['cp']
+        # PyPy currently cannot be built for arm64 on macos!
+        # py-impl: ['cp', 'pp']
+        # exclude:
+        #   # PyPy only goes up to 3.10: https://cibuildwheel.readthedocs.io/en/stable/options/#build-skip.
+        #   - py-impl: pp
+        #     python-version: 311
     runs-on: macos-latest
 
     steps:
