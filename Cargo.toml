@@ -37,6 +37,6 @@ categories              = ["development-tools::build-utils", "filesystem", "asyn
 homepage                = "https://github.com/cosmicexplorer/medusa-zip"
 repository              = "https://github.com/cosmicexplorer/medusa-zip"
 
-[profile.release]
-strip                   = true
-lto                     = true
+# [profile.release]
+# strip                   = true
+# lto                     = true

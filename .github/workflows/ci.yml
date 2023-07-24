@@ -10,7 +10,7 @@ on:
 
 jobs:
   test-py:
-    name: test ${{ matrix.python-version }} rust ${{ matrix.rust-toolchain }} on ${{ matrix.os }}
+    name: test ${{ matrix.python-version }} on ${{ matrix.os }}
     # name: test ${{ matrix.python-version }}
     strategy:
       fail-fast: true
@@ -77,6 +77,7 @@ jobs:
       run: cargo test
 
   lint-rust:
+    name: perform rust lint and style checks
     runs-on: ubuntu-latest
 
     steps:
@@ -104,6 +105,7 @@ jobs:
       run: cargo clippy
 
   lint-py:
+    name: perform python lint and style checks
     runs-on: ubuntu-latest
 
     steps:
@@ -118,32 +120,6 @@ jobs:
     - uses: isort/isort-action@master
       with:
         sortPaths: "py"
-
-  # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
-  check:
-    if: always()
-    needs: [test-py, test-rust, lint-rust, lint-py, check-versions]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Decide whether the needed jobs succeeded or failed
-        uses: re-actors/alls-green@release/v1
-        with:
-          jobs: ${{ toJSON(needs) }}
-
-  build-sdist:
-    name: Build source distribution
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Build sdist
-        run: pipx run build --sdist
-
-      - uses: actions/upload-artifact@v3
-        with:
-          name: sdist-artifact
-          path: dist/*.tar.gz
-          if-no-files-found: error
 
   check-versions:
     name: ensure package versions all correspond to the most recent tag
@@ -180,6 +156,32 @@ jobs:
           exit 1
         fi
 
+  # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
+  check:
+    if: always()
+    needs: [test-py, test-rust, lint-rust, lint-py, check-versions]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide whether the needed jobs succeeded or failed
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
+
+  build-sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build sdist
+        run: pipx run build --sdist
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: sdist-artifact
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
   build-bdists-ubuntu:
     name: build bdists for linux
     # run on releases, and on PRs with the label 'Full Build'
@@ -209,39 +211,40 @@ jobs:
         path: ./wheelhouse/*.whl
         if-no-files-found: error
 
-  # build-bdists-macos:
-  #   name: build bdists for macos
-  #   # run on releases, and on PRs with the label 'Full Build'
-  #   if: success() && (startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'Full Build'))
-  #   needs: [check]
+  build-bdists-macos:
+    name: build bdists for macos
+    # run on releases, and on PRs with the label 'Full Build'
+    if: success() && (startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'Full Build'))
+    needs: [check]
 
-  #   runs-on: macos-latest
+    runs-on: macos-latest
 
-  #   steps:
-  #   - uses: actions/checkout@v3
+    steps:
+    - uses: actions/checkout@v3
 
-  #   - name: set up python
-  #     uses: actions/setup-python@v4
-  #     with:
-  #       python-version: 3.11
+    - name: set up python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
 
-  #   - run: pip install --upgrade pip
+    - run: pip install --upgrade pip
 
-  #   - name: build wheels
-  #     uses: pypa/cibuildwheel@v2.14.1
-  #     env: CIBW_ARCHS_MACOS: x86_64 arm64
+    - name: build wheels
+      uses: pypa/cibuildwheel@v2.14.1
+      env:
+        CIBW_ARCHS_MACOS: x86_64 arm64
 
-  #   - uses: actions/upload-artifact@v3
-  #     with:
-  #       name: macos-bdist-artifacts
-  #       path: ./wheelhouse/*.whl
-  #       if-no-files-found: error
+    - uses: actions/upload-artifact@v3
+      with:
+        name: macos-bdist-artifacts
+        path: ./wheelhouse/*.whl
+        if-no-files-found: error
 
   upload-pypi-assets:
     name: upload it to pypi
     # NB: we have decided that releases are tags starting with a 'v'!
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [build-sdist, build-bdists-ubuntu]
+    needs: [build-sdist, build-bdists-ubuntu, build-bdists-macos]
     environment: pypi
     runs-on: ubuntu-latest
     permissions:
