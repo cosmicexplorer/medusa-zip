@@ -152,11 +152,6 @@ jobs:
     - run: sudo apt install jq
     - name: install rust nightly
       uses: dtolnay/rust-toolchain@nightly
-    - id: cache-rust-version-check
-      name: cache rust
-      uses: Swatinem/rust-cache@v2
-      with:
-        key: v1
 
     - run: python -c 'import tomllib; t = tomllib.load(open("pyproject.toml", "rb")); print("\n".join(t["build-system"]["requires"]));' > build-requires.txt
     - run: pip install -r build-requires.txt
@@ -166,13 +161,14 @@ jobs:
     - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "libmedusa-zip") | "v" + .version' > libmedusa-zip.version
     - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "pymedusa-zip") | "v" + .version' > pymedusa-zip.version
     - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "medusa-zip") | "v" + .version' > cli-medusa-zip.version
+    - run: cargo metadata --format-version 1 | jq -r '.packages[] | .dependencies[] | select(.name == "libmedusa-zip") | .req' | sed -re 's#^\^#v#' > internal-deps.version
 
     - run: |
         num_separate_versions="$(cat *.version | sort -u | wc -l)"
         if [[ "$num_separate_versions" -gt 1 ]]; then
           echo '::error::versions are out of sync:'
           for f in *.version; do
-            echo "::error::${f} => $(cat "$f")"
+            echo "::error::${f} => $(<"$f" tr '\n' ',' | sed -re "s#,\$#\n#")"
           done
           exit 1
         fi
