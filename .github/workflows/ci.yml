@@ -136,17 +136,23 @@ jobs:
     - name: install rust nightly
       uses: dtolnay/rust-toolchain@nightly
 
-    - run: python -c 'import tomllib; t = tomllib.load(open("pyproject.toml", "rb")); print("\n".join(t["build-system"]["requires"]));' > build-requires.txt
-    - run: pip install -r build-requires.txt
+    - name: extract python setup requires in order to extract the version (lol)
+      run: |
+        python -c 'import tomllib; t = tomllib.load(open("pyproject.toml", "rb")); print("\n".join(t["build-system"]["requires"]));' > build-requires.txt
+        pip install -r build-requires.txt
 
-    - run: git describe --tags --abbrev=0 > latest-tag.version
-    - run: printf 'v%s\n' "$(python setup.py --dry-run --version 2>/dev/null)" > pypi-medusa-zip.version
-    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "libmedusa-zip") | "v" + .version' > libmedusa-zip.version
-    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "pymedusa-zip") | "v" + .version' > pymedusa-zip.version
-    - run: cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "medusa-zip") | "v" + .version' > cli-medusa-zip.version
-    - run: cargo metadata --format-version 1 | jq -r '.packages[] | .dependencies[] | select(.name == "libmedusa-zip") | .req' | sed -re 's#^\^#v#' > internal-deps.version
+    - name: extract all the versions from across the repo
+      run: |
+        set -o pipefail
+        git describe --tags --abbrev=0 > latest-tag.version
+        printf 'v%s\n' "$(python setup.py --dry-run --version 2>/dev/null)" > pypi-medusa-zip.version
+        cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "libmedusa-zip") | "v" + .version' > libmedusa-zip.version
+        cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "pymedusa-zip") | "v" + .version' > pymedusa-zip.version
+        cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "medusa-zip") | "v" + .version' > cli-medusa-zip.version
+        cargo metadata --format-version 1 | jq -r '.packages[] | .dependencies[] | select(.name == "libmedusa-zip") | .req' | sed -re 's#^\^#v#' > internal-deps.version
 
-    - run: |
+    - name: check that all the versions match up across the workspace
+      run: |
         num_separate_versions="$(cat *.version | sort -u | wc -l)"
         if [[ "$num_separate_versions" -gt 1 ]]; then
           echo '::error::versions are out of sync:'
