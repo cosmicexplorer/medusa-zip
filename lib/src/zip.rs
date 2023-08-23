@@ -579,10 +579,15 @@ impl IntermediateSingleEntry {
   }
 }
 
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Copy, Clone, Default, Debug, Display)]
+#[ignore_extra_doc_attributes]
 pub enum Parallelism {
+  /// <SYNC>
+  ///
   /// Read source files and copy them to the output zip in order.
   Synchronous,
+  /// <PARALLEL>
+  ///
   /// Parallelize creation by splitting up the input into chunks.
   #[default]
   ParallelMerge,

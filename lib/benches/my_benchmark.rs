@@ -12,38 +12,30 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 mod parallel_merge {
   use super::*;
 
-  use libmedusa_zip::{self as lib, destination::OutputWrapper};
+  use libmedusa_zip as lib;
 
   use tempfile;
   use tokio::runtime::Runtime;
   use zip::{self, result::ZipError};
 
-  use std::{fs, io, time::Duration};
+  use std::{fs, path::Path, time::Duration};
 
-  /* This file is 461M, or about half a gigabyte, with multiple individual very
-   * large binary files. */
-  /* const LARGE_ZIP_CONTENTS: &'static [u8] = */
-  /* include_bytes!("tensorflow_gpu-2.5.3-cp38-cp38-manylinux2010_x86_64.whl"); */
-
-  /* This file is 37K. */
-  const SMALLER_ZIP_CONTENTS: &'static [u8] = include_bytes!("Keras-2.4.3-py2.py3-none-any.whl");
-
-  fn prepare_memory_zip(
-    zip_contents: &[u8],
+  fn extract_example_zip(
+    target: &Path,
   ) -> Result<(Vec<lib::FileSource>, tempfile::TempDir), ZipError> {
     /* Create the temp dir to extract into. */
     let extract_dir = tempfile::tempdir()?;
 
-    /* Load the zip archive from memory. */
-    let reader = io::Cursor::new(zip_contents);
-    let mut large_zip = zip::ZipArchive::new(reader)?;
+    /* Load the zip archive from file. */
+    let handle = fs::OpenOptions::new().read(true).open(target)?;
+    let mut zip_archive = zip::ZipArchive::new(handle)?;
 
     /* Extract the zip's contents. */
-    large_zip.extract(extract_dir.path())?;
+    zip_archive.extract(extract_dir.path())?;
 
     /* Generate the input to a MedusaZip by associating the (relative) file names
      * from the zip to their (absolute) extracted output paths. */
-    let input_files: Vec<lib::FileSource> = large_zip.file_names()
+    let input_files: Vec<lib::FileSource> = zip_archive.file_names()
     /* Ignore any directories, which are not represented in FileSource structs. */
     .filter(|f| !f.ends_with('/'))
     .map(|f| {
@@ -59,7 +51,6 @@ mod parallel_merge {
     Ok((input_files, extract_dir))
   }
 
-
   async fn create_basic_zip(
     input_files: Vec<lib::FileSource>,
     parallelism: lib::zip::Parallelism,
@@ -70,11 +61,11 @@ mod parallel_merge {
       modifications: lib::zip::EntryModifications::default(),
       parallelism,
     };
-    let output_zip = OutputWrapper::wrap(zip::ZipWriter::new(tempfile::tempfile()?));
+    let output_zip =
+      lib::destination::OutputWrapper::wrap(zip::ZipWriter::new(tempfile::tempfile()?));
     let mut output_zip = zip_spec.zip(output_zip).await?.reclaim();
     Ok(output_zip.finish_into_readable()?)
   }
-
 
   pub fn bench_zips(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
@@ -89,48 +80,55 @@ mod parallel_merge {
        * some small true changes. */
       .significance_level(0.01);
 
-    for (id, zip_contents, n, t) in [
+    for (filename, n, t) in [
       (
+        /* This file is 37K. */
         "Keras-2.4.3-py2.py3-none-any.whl",
-        SMALLER_ZIP_CONTENTS,
         1000,
         Duration::from_secs(7),
       ),
-      /* ("tensorflow_gpu-2.5.3-cp38-cp38-manylinux2010_x86_64.whl", LARGE_ZIP_CONTENTS), */
+      (
+        /* This file is 461M, or about half a gigabyte, with multiple individual very
+         * large binary files. */
+        "tensorflow_gpu-2.5.3-cp38-cp38-manylinux2010_x86_64.whl",
+        10,
+        Duration::from_secs(330),
+      ),
     ]
     .iter()
     {
+      let target = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("benches")
+        .join(filename);
+      let zip_len = target.metadata().unwrap().len();
+
+      let id = format!("{}({} bytes)", filename, zip_len);
+
       group
         .sample_size(*n)
         .measurement_time(*t)
-        .throughput(Throughput::Bytes(zip_contents.len() as u64));
+        .throughput(Throughput::Bytes(zip_len as u64));
 
       /* FIXME: assigning `_` to the second arg of this tuple will destroy the
        * extract dir, which is only a silent error producing an empty file!!!
        * AWFUL UX!!! */
-      let (input_files, _tmp_extract_dir) = prepare_memory_zip(zip_contents).unwrap();
-      group.noise_threshold(0.03);
-      group.bench_with_input(
-        BenchmarkId::new(*id, "ParallelMerge"),
-        &lib::zip::Parallelism::ParallelMerge,
-        |b, p| {
-          b.to_async(&rt)
-            .iter(|| create_basic_zip(input_files.clone(), *p));
-        },
-      );
+      let (input_files, _tmp_extract_dir) = extract_example_zip(&target).unwrap();
 
-      /* This says we don't care about improvements under 5%, which is a huge gap,
-       * but otherwise the synchronous keras benchmark will report e.g. 4.8%
-       * improvement immediately after the last bench. */
-      group.noise_threshold(0.05);
-      group.bench_with_input(
-        BenchmarkId::new(*id, "Synchronous"),
-        &lib::zip::Parallelism::Synchronous,
-        |b, p| {
+      for (noise_threshold, parallelism) in [
+        (0.03, lib::zip::Parallelism::ParallelMerge),
+        /* This says we don't care about improvements under 5%, which is a huge gap,
+         * but otherwise the synchronous keras benchmark will report e.g. 4.8%
+         * improvement immediately after the last bench. */
+        (0.05, lib::zip::Parallelism::Synchronous),
+      ]
+      .iter()
+      {
+        group.noise_threshold(*noise_threshold);
+        group.bench_with_input(BenchmarkId::new(&id, parallelism), parallelism, |b, p| {
           b.to_async(&rt)
             .iter(|| create_basic_zip(input_files.clone(), *p));
-        },
-      );
+        });
+      }
     }
 
     group.finish();
