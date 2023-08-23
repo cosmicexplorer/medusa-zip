@@ -7,7 +7,7 @@
  * Licensed under the Apache License, Version 2.0 (see LICENSE).
  */
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 mod parallel_merge {
   use super::*;
@@ -80,15 +80,36 @@ mod parallel_merge {
     let rt = Runtime::new().unwrap();
 
     let mut group = c.benchmark_group("zip");
-    /* group.measurement_time(Duration::from_secs(3258)); */
+    group
+      /* Increases analysis time (short compared to benchmark) but reduces
+       * resampling errors (seems to make p-values smaller across repeated runs
+       * of the same code (which should be correct, as it is the same code)). */
+      .nresamples(300000)
+      /* Only 1% of identical benchmarks should register as different due to noise, but we may miss
+       * some small true changes. */
+      .significance_level(0.01);
 
-    for (id, zip_contents) in [
-      ("Keras-2.4.3-py2.py3-none-any.whl", SMALLER_ZIP_CONTENTS),
+    for (id, zip_contents, n, t) in [
+      (
+        "Keras-2.4.3-py2.py3-none-any.whl",
+        SMALLER_ZIP_CONTENTS,
+        1000,
+        Duration::from_secs(7),
+      ),
       /* ("tensorflow_gpu-2.5.3-cp38-cp38-manylinux2010_x86_64.whl", LARGE_ZIP_CONTENTS), */
     ]
     .iter()
     {
-      let (input_files, _td) = prepare_memory_zip(zip_contents).unwrap();
+      group
+        .sample_size(*n)
+        .measurement_time(*t)
+        .throughput(Throughput::Bytes(zip_contents.len() as u64));
+
+      /* FIXME: assigning `_` to the second arg of this tuple will destroy the
+       * extract dir, which is only a silent error producing an empty file!!!
+       * AWFUL UX!!! */
+      let (input_files, _tmp_extract_dir) = prepare_memory_zip(zip_contents).unwrap();
+      group.noise_threshold(0.03);
       group.bench_with_input(
         BenchmarkId::new(*id, "ParallelMerge"),
         &lib::zip::Parallelism::ParallelMerge,
@@ -97,6 +118,11 @@ mod parallel_merge {
             .iter(|| create_basic_zip(input_files.clone(), *p));
         },
       );
+
+      /* This says we don't care about improvements under 5%, which is a huge gap,
+       * but otherwise the synchronous keras benchmark will report e.g. 4.8%
+       * improvement immediately after the last bench. */
+      group.noise_threshold(0.05);
       group.bench_with_input(
         BenchmarkId::new(*id, "Synchronous"),
         &lib::zip::Parallelism::Synchronous,
@@ -106,6 +132,8 @@ mod parallel_merge {
         },
       );
     }
+
+    group.finish();
   }
 }
 
