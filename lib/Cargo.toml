@@ -29,8 +29,12 @@ tokio                   = { workspace = true, features = ["fs", "io-util", "rt",
 tokio-stream            = { version = "0.1", features = ["fs"] }
 zip.workspace           = true
 
-# [dev-dependencies]
-# proptest                = "1"
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "my_benchmark"
+harness = false
 
 # Use nicer docs features for docs.rs. See https://users.rust-lang.org/t/how-to-test-a-package-metadata-docs-rs-setting/53818.
 [package.metadata.docs.rs]
