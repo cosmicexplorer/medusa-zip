@@ -18,5 +18,10 @@ This crate adds some hacks to the widely-used `zip` crate (see the diff at https
 ## Compatibility
 We mainly need compatibility with [`zipfile`](https://docs.python.org/3/library/zipfile.html) and [`zipimport`](https://docs.python.org/3/library/zipimport.html) (see https://github.com/pantsbuild/pex/issues/2158#issuecomment-1599348047). Also see [the `zipimport` PEP](https://peps.python.org/pep-0273/). **I currently believe that this program's output will work perfectly against `zipfile` and `zipimport`.**
 
+# TODO
+- [ ] benchmark zip creation (vs `zip` crate)
+- [ ] benchmark zip merging (vs `zip` crate)
+    - [ ] this should also really be done in the [`zip-merge` crate](https://github.com/cosmicexplorer/zip), too
+
 # License
 [Apache v2](./LICENSE).
