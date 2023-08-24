@@ -33,6 +33,7 @@ mod parallel_merge {
     let mut zip_archive = zip::ZipArchive::new(handle)?;
 
     /* Extract the zip's contents. */
+    /* FIXME: make a parallelized zip extractor too! */
     zip_archive.extract(extract_dir.path())?;
 
     /* Generate the input to a MedusaZip by associating the (relative) file names
@@ -103,40 +104,47 @@ mod parallel_merge {
 
     let mut group = c.benchmark_group("zip");
     group
-      /* Increases analysis time (short compared to benchmark) but reduces
-       * resampling errors (seems to make p-values smaller across repeated runs
-       * of the same code (which should be correct, as it is the same code)). */
+    /* Increases analysis time (short compared to benchmark) but reduces
+     * resampling errors (seems to make p-values smaller across repeated runs
+     * of the same code (which should be correct, as it is the same code)). */
       .nresamples(300000)
-      /* Only 1% of identical benchmarks should register as different due to noise, but we may miss
-       * some small true changes. */
+    /* Only 1% of identical benchmarks should register as different due to noise, but we may miss
+     * some small true changes. */
       .significance_level(0.01);
 
-    for (filename, (n_p, n_sync), (t_p, t_sync), (noise_p, noise_sync), sampling_mode) in [
+    for (
+      filename,
+      (n_crawl, (n_p, n_sync)),
+      (t_crawl, (t_p, t_sync)),
+      (noise_crawl, (noise_p, noise_sync)),
+      mode,
+    ) in [
       (
         /* This file is 37K. */
         "Keras-2.4.3-py2.py3-none-any.whl",
-        (500, 500),
-        (Duration::from_secs(7), Duration::from_secs(7)),
-        /* This says we don't care about changes under 15%, which is a huge gap,
-         * but otherwise the synchronous benchmarks will constantly signal spurious changes. */
-        (0.03, 0.15),
+        (500, (500, 500)),
+        (Duration::from_secs(3), (Duration::from_secs(7), Duration::from_secs(7))),
+        /* This says we don't care about changes under 15% for this *sync* benchmark, which is
+         * a huge gap, but otherwise the synchronous benchmarks will constantly signal spurious
+         * changes. */
+        (0.05, (0.03, 0.15)),
         SamplingMode::Auto,
       ),
       (
         /* This file is 1.2M. */
         "Pygments-2.16.1-py3-none-any.whl",
-        (100, 100),
-        (Duration::from_secs(8), Duration::from_secs(24)),
-        (0.07, 0.2),
+        (100, (100, 100)),
+        (Duration::from_secs(5), (Duration::from_secs(8), Duration::from_secs(24))),
+        (0.05, (0.07, 0.2)),
         SamplingMode::Auto,
       ),
       (
         /* This file is 9.7M. */
         "Babel-2.12.1-py3-none-any.whl",
-        (80, 10),
-        (Duration::from_secs(35), Duration::from_secs(35)),
-        /* 50% variation is within noise given our low sample size for the sync tests. */
-        (0.2, 0.5),
+        (100, (80, 10)),
+        (Duration::from_secs(3), (Duration::from_secs(35), Duration::from_secs(35))),
+        /* 50% variation is within noise given our low sample size for the slow sync tests. */
+        (0.1, (0.2, 0.5)),
         SamplingMode::Flat,
       ),
       /* ( */
@@ -156,14 +164,18 @@ mod parallel_merge {
 
       let id = format!("{}({} bytes)", filename, zip_len);
 
-      group
-        .throughput(Throughput::Bytes(zip_len as u64))
-        .sampling_mode(*sampling_mode);
+      group.throughput(Throughput::Bytes(zip_len as u64));
 
       /* FIXME: assigning `_` to the second arg of this tuple will destroy the
        * extract dir, which is only a silent error producing an empty file!!!
        * AWFUL UX!!! */
       let (input_files, extracted_dir) = extract_example_zip(&target).unwrap();
+
+      /* Run the parallel filesystem crawl. */
+      group
+        .sample_size(*n_crawl)
+        .measurement_time(*t_crawl)
+        .noise_threshold(*noise_crawl);
       group.bench_function(
         BenchmarkId::new(&id, "<crawling the extracted contents>"),
         |b| {
@@ -171,6 +183,8 @@ mod parallel_merge {
             .iter(|| execute_medusa_crawl(extracted_dir.path()))
         },
       );
+
+      group.sampling_mode(*mode);
 
       /* Run the parallel implementation. */
       let parallelism = lib::zip::Parallelism::ParallelMerge;
