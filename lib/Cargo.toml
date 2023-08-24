@@ -32,6 +32,7 @@ zip.workspace           = true
 [dev-dependencies]
 criterion               = { version = "0.5", features = ["async_tokio"] }
 tokio                   = { workspace = true, features = ["rt-multi-thread"] }
+walkdir                 = "2"
 
 [[bench]]
 name                    = "my_benchmark"

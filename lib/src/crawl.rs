@@ -42,7 +42,7 @@ pub enum MedusaCrawlError {
   CrawlFormat(#[from] MedusaCrawlFormatError),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedPath {
   /// The path *without* any symlink resolution.
   pub unresolved_path: PathBuf,
@@ -95,7 +95,7 @@ impl ResolvedPath {
   }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CrawlResult {
   pub real_file_paths: Vec<ResolvedPath>,
 }
@@ -117,7 +117,7 @@ impl CrawlResult {
     }
   }
 
-  pub(crate) fn clean_up_for_export(&mut self, cwd: &Path) {
+  pub fn clean_up_for_export(&mut self, cwd: &Path) {
     let Self { real_file_paths } = self;
     real_file_paths
       .par_iter_mut()

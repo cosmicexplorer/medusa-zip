@@ -16,8 +16,10 @@ mod parallel_merge {
 
   use libmedusa_zip as lib;
 
+  use rayon::prelude::*;
   use tempfile;
   use tokio::runtime::Runtime;
+  use walkdir::WalkDir;
   use zip::{self, result::ZipError};
 
   use std::{env, fs, io, path::Path, time::Duration};
@@ -59,7 +61,50 @@ mod parallel_merge {
   ) -> Result<lib::crawl::CrawlResult, lib::crawl::MedusaCrawlError> {
     let ignores = lib::crawl::Ignores::default();
     let crawl_spec = lib::crawl::MedusaCrawl::for_single_dir(extracted_dir.to_path_buf(), ignores);
-    crawl_spec.crawl_paths().await
+    let mut crawl_result = crawl_spec.crawl_paths().await?;
+    /* This gets us something deterministic that  we can compare to the output of
+     * execute_basic_crawl(). */
+    crawl_result.real_file_paths.par_sort_by_cached_key(
+      |lib::crawl::ResolvedPath {
+         unresolved_path, ..
+       }| unresolved_path.clone(),
+    );
+    Ok(crawl_result)
+  }
+
+  fn execute_basic_crawl(extracted_dir: &Path) -> Result<lib::crawl::CrawlResult, io::Error> {
+    let mut real_file_paths: Vec<lib::crawl::ResolvedPath> = Vec::new();
+    for entry in WalkDir::new(extracted_dir)
+      .follow_links(false)
+      .sort_by_file_name()
+    {
+      let entry = entry?;
+      if entry.file_type().is_dir() {
+        continue;
+      }
+
+      let unresolved_path = entry
+        .path()
+        .strip_prefix(extracted_dir)
+        .unwrap()
+        .to_path_buf();
+      let rp = if entry.path_is_symlink() {
+        lib::crawl::ResolvedPath {
+          unresolved_path,
+          resolved_path: fs::read_link(entry.path())?,
+        }
+      } else {
+        lib::crawl::ResolvedPath {
+          unresolved_path,
+          resolved_path: entry.path().to_path_buf(),
+        }
+      };
+      real_file_paths.push(rp);
+    }
+
+    let mut ret = lib::crawl::CrawlResult { real_file_paths };
+    ret.clean_up_for_export(extracted_dir);
+    Ok(ret)
   }
 
   async fn execute_medusa_zip(
@@ -122,38 +167,49 @@ mod parallel_merge {
       (
         /* This file is 37K. */
         "Keras-2.4.3-py2.py3-none-any.whl",
-        (500, (500, 500)),
-        (Duration::from_secs(3), (Duration::from_secs(7), Duration::from_secs(7))),
+        (1000, (500, 500)),
+        (
+          Duration::from_secs(3),
+          (Duration::from_secs(7), Duration::from_secs(7)),
+        ),
         /* This says we don't care about changes under 15% for this *sync* benchmark, which is
          * a huge gap, but otherwise the synchronous benchmarks will constantly signal spurious
          * changes. */
-        (0.05, (0.03, 0.15)),
+        (0.1, (0.03, 0.15)),
         SamplingMode::Auto,
       ),
       (
         /* This file is 1.2M. */
         "Pygments-2.16.1-py3-none-any.whl",
-        (100, (100, 100)),
-        (Duration::from_secs(5), (Duration::from_secs(8), Duration::from_secs(24))),
+        (1000, (100, 100)),
+        (
+          Duration::from_secs(5),
+          (Duration::from_secs(8), Duration::from_secs(24)),
+        ),
         (0.05, (0.07, 0.2)),
         SamplingMode::Auto,
       ),
       (
         /* This file is 9.7M. */
         "Babel-2.12.1-py3-none-any.whl",
-        (100, (80, 10)),
-        (Duration::from_secs(3), (Duration::from_secs(35), Duration::from_secs(35))),
+        (1000, (80, 10)),
+        (
+          Duration::from_secs(3),
+          (Duration::from_secs(35), Duration::from_secs(35)),
+        ),
         /* 50% variation is within noise given our low sample size for the slow sync tests. */
         (0.1, (0.2, 0.5)),
         SamplingMode::Flat,
       ),
-      /* ( */
-      /*   /\* This file is 461M, or about half a gigabyte, with multiple individual very */
-      /*    * large binary files. *\/ */
-      /*   "tensorflow_gpu-2.5.3-cp38-cp38-manylinux2010_x86_64.whl", */
-      /*   10, */
-      /*   Duration::from_secs(330), */
-      /* ), */
+      (
+        /* This file is 461M, or about half a gigabyte, with multiple individual very
+         * large binary files. */
+        "tensorflow_gpu-2.5.3-cp38-cp38-manylinux2010_x86_64.whl",
+        (100, (1, 1)),
+        (Duration::from_secs(10), (Duration::ZERO, Duration::ZERO)),
+        (0.1, (0.0, 0.0)),
+        SamplingMode::Flat,
+      ),
     ]
     .iter()
     {
@@ -162,7 +218,11 @@ mod parallel_merge {
         .join(filename);
       let zip_len = target.metadata().unwrap().len();
 
-      let id = format!("{}({} bytes)", filename, zip_len);
+      let id = format!(
+        "{}({} bytes)",
+        &filename[..=filename.find('-').unwrap()],
+        zip_len
+      );
 
       group.throughput(Throughput::Bytes(zip_len as u64));
 
@@ -177,12 +237,27 @@ mod parallel_merge {
         .measurement_time(*t_crawl)
         .noise_threshold(*noise_crawl);
       group.bench_function(
-        BenchmarkId::new(&id, "<crawling the extracted contents>"),
+        BenchmarkId::new(&id, "<parallel crawling the extracted contents>"),
         |b| {
           b.to_async(&rt)
             .iter(|| execute_medusa_crawl(extracted_dir.path()))
         },
       );
+      /* Run the sync filesystem crawl. */
+      group.bench_function(
+        BenchmarkId::new(&id, "<sync crawling the extracted contents>"),
+        |b| b.iter(|| execute_basic_crawl(extracted_dir.path())),
+      );
+      /* Compare the outputs of the two crawls. */
+      let medusa_crawl_result = rt
+        .block_on(execute_medusa_crawl(extracted_dir.path()))
+        .unwrap();
+      let sync_crawl_result = execute_basic_crawl(extracted_dir.path()).unwrap();
+      assert_eq!(medusa_crawl_result, sync_crawl_result);
+
+      if env::var_os("ONLY_CRAWL").is_some() {
+        continue;
+      }
 
       group.sampling_mode(*mode);
 

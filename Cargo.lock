@@ -626,6 +626,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
+ "walkdir",
  "zip-merge",
 ]
 
