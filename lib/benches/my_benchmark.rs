@@ -60,7 +60,7 @@ mod parallel_merge {
     let zip_spec = lib::zip::MedusaZip {
       input_files,
       zip_options: lib::zip::ZipOutputOptions {
-        mtime_behavior: lib::zip::ModifiedTimeBehavior::Reproducible,
+        mtime_behavior: lib::zip::ModifiedTimeBehavior::Explicit(zip::DateTime::zero()),
         compression_options: lib::zip::CompressionStrategy::Deflated(Some(6)),
       },
       modifications: lib::zip::EntryModifications::default(),
@@ -79,7 +79,8 @@ mod parallel_merge {
 
     let options = zip::write::FileOptions::default()
       .compression_method(zip::CompressionMethod::Deflated)
-      .compression_level(Some(6));
+      .compression_level(Some(6))
+      .last_modified_time(zip::DateTime::zero());
     for lib::FileSource { name, source } in input_files.into_iter() {
       let mut in_f = fs::OpenOptions::new().read(true).open(source)?;
       output_zip.start_file(name.into_string(), options)?;
