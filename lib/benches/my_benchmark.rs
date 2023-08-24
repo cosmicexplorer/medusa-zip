@@ -84,16 +84,22 @@ mod parallel_merge {
       (
         /* This file is 37K. */
         "Keras-2.4.3-py2.py3-none-any.whl",
-        1000,
+        500,
         Duration::from_secs(7),
       ),
       (
-        /* This file is 461M, or about half a gigabyte, with multiple individual very
-         * large binary files. */
-        "tensorflow_gpu-2.5.3-cp38-cp38-manylinux2010_x86_64.whl",
-        10,
-        Duration::from_secs(330),
+        /* This file is 1.2M. */
+        "Pygments-2.16.1-py3-none-any.whl",
+        100,
+        Duration::from_secs(24),
       ),
+      /* ( */
+      /*   /\* This file is 461M, or about half a gigabyte, with multiple individual very */
+      /*    * large binary files. *\/ */
+      /*   "tensorflow_gpu-2.5.3-cp38-cp38-manylinux2010_x86_64.whl", */
+      /*   10, */
+      /*   Duration::from_secs(330), */
+      /* ), */
     ]
     .iter()
     {
