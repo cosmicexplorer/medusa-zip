@@ -43,7 +43,8 @@ def main(zip_src: str, out_zip: str, zipfile_zip: str | None = None) -> None:
     print(f"zipped with parallelism {parallelism}", file=sys.stderr)
 
     if zipfile_zip is not None:
-      with zipfile.ZipFile(zipfile_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zipfile_zf:
+      with zipfile.ZipFile(zipfile_zip, mode="w",
+                           compresslevel=6, compression=zipfile.ZIP_DEFLATED) as zipfile_zf:
         for rp in crawl_result.real_file_paths:
           # FIXME: no intermediate directories written!
           with Path(rp.resolved_path).open(mode="rb") as in_f,\

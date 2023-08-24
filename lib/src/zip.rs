@@ -586,7 +586,7 @@ pub enum Parallelism {
   ///
   /// Read source files and copy them to the output zip in order.
   Synchronous,
-  /// <PARALLEL>
+  /// <PARALLEL-MERGE>
   ///
   /// Parallelize creation by splitting up the input into chunks.
   #[default]

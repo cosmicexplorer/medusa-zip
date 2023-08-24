@@ -20,7 +20,7 @@ mod parallel_merge {
   use tokio::runtime::Runtime;
   use zip::{self, result::ZipError};
 
-  use std::{env, fs, path::Path, time::Duration};
+  use std::{env, fs, io, path::Path, time::Duration};
 
   fn extract_example_zip(
     target: &Path,
@@ -53,19 +53,39 @@ mod parallel_merge {
     Ok((input_files, extract_dir))
   }
 
-  async fn create_basic_zip(
+  async fn execute_medusa_zip(
     input_files: Vec<lib::FileSource>,
     parallelism: lib::zip::Parallelism,
   ) -> Result<zip::ZipArchive<fs::File>, lib::zip::MedusaZipError> {
     let zip_spec = lib::zip::MedusaZip {
       input_files,
-      zip_options: lib::zip::ZipOutputOptions::default(),
+      zip_options: lib::zip::ZipOutputOptions {
+        mtime_behavior: lib::zip::ModifiedTimeBehavior::Reproducible,
+        compression_options: lib::zip::CompressionStrategy::Deflated(Some(6)),
+      },
       modifications: lib::zip::EntryModifications::default(),
       parallelism,
     };
     let output_zip =
       lib::destination::OutputWrapper::wrap(zip::ZipWriter::new(tempfile::tempfile()?));
     let mut output_zip = zip_spec.zip(output_zip).await?.reclaim();
+    Ok(output_zip.finish_into_readable()?)
+  }
+
+  fn execute_basic_zip(
+    input_files: Vec<lib::FileSource>,
+  ) -> Result<zip::ZipArchive<fs::File>, ZipError> {
+    let mut output_zip = zip::ZipWriter::new(tempfile::tempfile()?);
+
+    let options = zip::write::FileOptions::default()
+      .compression_method(zip::CompressionMethod::Deflated)
+      .compression_level(Some(6));
+    for lib::FileSource { name, source } in input_files.into_iter() {
+      let mut in_f = fs::OpenOptions::new().read(true).open(source)?;
+      output_zip.start_file(name.into_string(), options)?;
+      io::copy(&mut in_f, &mut output_zip)?;
+    }
+
     Ok(output_zip.finish_into_readable()?)
   }
 
@@ -106,7 +126,8 @@ mod parallel_merge {
         "Babel-2.12.1-py3-none-any.whl",
         (80, 10),
         (Duration::from_secs(35), Duration::from_secs(35)),
-        (0.2, 0.3),
+        /* 50% variation is within noise given our low sample size for the sync tests. */
+        (0.2, 0.5),
         SamplingMode::Flat,
       ),
       /* ( */
@@ -143,7 +164,7 @@ mod parallel_merge {
         .noise_threshold(*noise_p);
       group.bench_with_input(BenchmarkId::new(&id, parallelism), &parallelism, |b, p| {
         b.to_async(&rt)
-          .iter(|| create_basic_zip(input_files.clone(), *p));
+          .iter(|| execute_medusa_zip(input_files.clone(), *p));
       });
 
       /* Run the sync implementation. */
@@ -155,7 +176,14 @@ mod parallel_merge {
           .noise_threshold(*noise_sync);
         group.bench_with_input(BenchmarkId::new(&id, parallelism), &parallelism, |b, p| {
           b.to_async(&rt)
-            .iter(|| create_basic_zip(input_files.clone(), *p));
+            .iter(|| execute_medusa_zip(input_files.clone(), *p));
+        });
+
+        /* Run the implementation based only off of the zip crate. We reuse the same
+         * sampling presets under the assumption it will have a very similar
+         * runtime. */
+        group.bench_function(BenchmarkId::new(&id, "<sync zip crate>"), |b| {
+          b.iter(|| execute_basic_zip(input_files.clone()));
         });
       }
     }
