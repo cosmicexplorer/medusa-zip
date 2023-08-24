@@ -53,6 +53,14 @@ mod parallel_merge {
     Ok((input_files, extract_dir))
   }
 
+  async fn execute_medusa_crawl(
+    extracted_dir: &Path,
+  ) -> Result<lib::crawl::CrawlResult, lib::crawl::MedusaCrawlError> {
+    let ignores = lib::crawl::Ignores::default();
+    let crawl_spec = lib::crawl::MedusaCrawl::for_single_dir(extracted_dir.to_path_buf(), ignores);
+    crawl_spec.crawl_paths().await
+  }
+
   async fn execute_medusa_zip(
     input_files: Vec<lib::FileSource>,
     parallelism: lib::zip::Parallelism,
@@ -155,7 +163,14 @@ mod parallel_merge {
       /* FIXME: assigning `_` to the second arg of this tuple will destroy the
        * extract dir, which is only a silent error producing an empty file!!!
        * AWFUL UX!!! */
-      let (input_files, _tmp_extract_dir) = extract_example_zip(&target).unwrap();
+      let (input_files, extracted_dir) = extract_example_zip(&target).unwrap();
+      group.bench_function(
+        BenchmarkId::new(&id, "<crawling the extracted contents>"),
+        |b| {
+          b.to_async(&rt)
+            .iter(|| execute_medusa_crawl(extracted_dir.path()))
+        },
+      );
 
       /* Run the parallel implementation. */
       let parallelism = lib::zip::Parallelism::ParallelMerge;

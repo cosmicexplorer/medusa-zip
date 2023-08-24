@@ -5,6 +5,8 @@
 #
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
+# FIXME: remove Optional and Union for future annotations!
+
 from pathlib import Path
 from typing import Iterable, Optional, Union
 
@@ -51,13 +53,18 @@ class MedusaCrawl:
     self,
     paths_to_crawl: Iterable[Union[str, Path]],
     ignores: Optional[Ignores] = None,
+    cwd: Optional[Union[str, Path]] = None,
   ) -> None:
     ...
 
   @property
   def paths_to_crawl(self) -> Iterable[Path]: ...
+
   @property
   def ignores(self) -> Ignores: ...
+
+  @property
+  def cwd(self) -> Optional[Path]: ...
 
   async def crawl_paths(self) -> CrawlResult: ...
 

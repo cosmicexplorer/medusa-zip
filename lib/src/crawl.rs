@@ -69,10 +69,12 @@ impl ResolvedPath {
     }
   }
 
-  pub fn from_path(path: PathBuf) -> Self {
+  pub(crate) fn from_path_and_root(relative_path: PathBuf, root: &Path) -> Self {
+    assert!(relative_path.is_relative());
+    assert!(root.is_absolute());
     Self {
-      unresolved_path: path.clone(),
-      resolved_path: path,
+      resolved_path: root.join(&relative_path),
+      unresolved_path: relative_path,
     }
   }
 
@@ -285,21 +287,51 @@ impl Input {
 pub struct MedusaCrawl {
   pub paths_to_crawl: Vec<PathBuf>,
   pub ignores: Ignores,
+  pub cwd: Option<PathBuf>,
+}
+
+impl Default for MedusaCrawl {
+  fn default() -> Self {
+    Self {
+      paths_to_crawl: vec![PathBuf::from(".")],
+      ignores: Ignores::default(),
+      cwd: None,
+    }
+  }
 }
 
 impl MedusaCrawl {
+  pub fn for_single_dir(dir: PathBuf, ignores: Ignores) -> Self {
+    Self {
+      paths_to_crawl: vec![PathBuf::from(".")],
+      ignores,
+      cwd: Some(dir),
+    }
+  }
+
   pub async fn crawl_paths(self) -> Result<CrawlResult, MedusaCrawlError> {
     let Self {
       paths_to_crawl,
       ignores,
+      cwd,
     } = self;
-    let cwd = env::current_dir()?;
+    let cwd: PathBuf = cwd.map(Ok).unwrap_or_else(env::current_dir)?;
 
-    let results: Vec<CrawlResult> = try_join_all(
-      paths_to_crawl
-        .into_iter()
-        .map(|path| Input::Path(ResolvedPath::from_path(path)).crawl_single(&ignores)),
-    )
+    /* Validate all paths in a rayon blast before touching the filesystem. */
+    paths_to_crawl
+      .par_iter()
+      .map(|p| {
+        if p.is_absolute() {
+          Err(MedusaCrawlFormatError::PathWasAbsolute(p.clone()))
+        } else {
+          Ok(())
+        }
+      })
+      .collect::<Result<(), MedusaCrawlFormatError>>()?;
+
+    let results: Vec<CrawlResult> = try_join_all(paths_to_crawl.into_iter().map(|relative_path| {
+      Input::Path(ResolvedPath::from_path_and_root(relative_path, &cwd)).crawl_single(&ignores)
+    }))
     .await?;
     let mut result = CrawlResult::merge(results);
 

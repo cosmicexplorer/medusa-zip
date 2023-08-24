@@ -202,24 +202,30 @@ impl From<lib_crawl::Ignores> for Ignores {
 #[pyclass]
 #[derive(Clone)]
 pub struct MedusaCrawl {
+  /* FIXME: make these both get and set!!! */
   #[pyo3(get)]
   pub paths_to_crawl: Vec<PathBuf>,
   #[pyo3(get)]
   pub ignores: Ignores,
+  #[pyo3(get)]
+  pub cwd: Option<PathBuf>,
 }
 
 #[pymethods]
 impl MedusaCrawl {
   #[new]
-  fn new(paths_to_crawl: &PyAny, ignores: Option<Ignores>) -> PyResult<Self> {
+  #[pyo3(signature = (paths_to_crawl, ignores = None, cwd = None))]
+  fn new(paths_to_crawl: &PyAny, ignores: Option<Ignores>, cwd: Option<&PyAny>) -> PyResult<Self> {
     let ignores = ignores.unwrap_or_default();
     let paths_to_crawl: Vec<PathBuf> = paths_to_crawl
       .iter()?
       .map(|p| p.and_then(PyAny::extract::<PathBuf>))
       .collect::<PyResult<_>>()?;
+    let cwd = cwd.map(|cwd| PyAny::extract::<PathBuf>(cwd)).transpose()?;
     Ok(Self {
       paths_to_crawl,
       ignores,
+      cwd,
     })
   }
 
@@ -227,12 +233,14 @@ impl MedusaCrawl {
     let Self {
       paths_to_crawl,
       ignores,
+      cwd,
     } = self;
     let paths_to_crawl = repr(py, paths_to_crawl.clone())?;
     let ignores = repr(py, ignores.clone())?;
+    let cwd = repr(py, cwd.clone())?;
     Ok(format!(
-      "MedusaCrawl(paths_to_crawl={}, ignores={})",
-      paths_to_crawl, ignores
+      "MedusaCrawl(paths_to_crawl={}, ignores={}, cwd={})",
+      paths_to_crawl, ignores, cwd,
     ))
   }
 
@@ -270,10 +278,12 @@ impl From<MedusaCrawl> for lib_crawl::MedusaCrawl {
     let MedusaCrawl {
       paths_to_crawl,
       ignores,
+      cwd,
     } = x;
     Self {
       paths_to_crawl,
       ignores: ignores.into(),
+      cwd,
     }
   }
 }

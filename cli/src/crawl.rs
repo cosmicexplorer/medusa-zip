@@ -136,6 +136,11 @@ pub struct MedusaCrawl {
   /// These patterns will not read through symlinks.
   #[arg(short, long, default_values_t = Vec::<RegexWrapper>::new())]
   pub ignore_patterns: Vec<RegexWrapper>,
+  /// Where [`paths_to_crawl`](Self::paths_to_crawl) is relative to.
+  ///
+  /// Defaults to the process's current working directory if not provided.
+  #[arg(short, long, default_value = None)]
+  pub working_dir: Option<PathBuf>,
 }
 
 impl From<MedusaCrawl> for lib_crawl::MedusaCrawl {
@@ -143,6 +148,7 @@ impl From<MedusaCrawl> for lib_crawl::MedusaCrawl {
     let MedusaCrawl {
       paths_to_crawl,
       ignore_patterns,
+      working_dir,
     } = x;
     let ignore_patterns = RegexSet::new(
       ignore_patterns
@@ -153,6 +159,7 @@ impl From<MedusaCrawl> for lib_crawl::MedusaCrawl {
     Self {
       paths_to_crawl: paths_to_crawl.into_iter().map(PathBuf::from).collect(),
       ignores: lib_crawl::Ignores::new(ignore_patterns),
+      cwd: working_dir,
     }
   }
 }
