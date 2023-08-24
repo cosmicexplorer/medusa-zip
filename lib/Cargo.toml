@@ -31,6 +31,8 @@ zip.workspace           = true
 
 [dev-dependencies]
 criterion               = { version = "0.5", features = ["async_tokio"] }
+generic-array           = "0.14.7"
+sha3                    = "0.10.8"
 tokio                   = { workspace = true, features = ["rt-multi-thread"] }
 walkdir                 = "2"
 

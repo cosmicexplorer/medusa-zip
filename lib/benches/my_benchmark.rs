@@ -16,13 +16,29 @@ mod parallel_merge {
 
   use libmedusa_zip as lib;
 
+  use generic_array::{typenum::U32, GenericArray};
   use rayon::prelude::*;
+  use sha3::{Digest, Sha3_256};
   use tempfile;
   use tokio::runtime::Runtime;
   use walkdir::WalkDir;
   use zip::{self, result::ZipError};
 
   use std::{env, fs, io, path::Path, time::Duration};
+
+  fn hash_file_bytes(f: &mut fs::File) -> Result<GenericArray<u8, U32>, io::Error> {
+    use io::{Read, Seek};
+
+    f.rewind()?;
+
+    let mut hasher = Sha3_256::new();
+    let mut buf: Vec<u8> = Vec::new();
+    /* TODO: how to hash in chunks at a time? */
+    f.read_to_end(&mut buf)?;
+    hasher.update(buf);
+
+    Ok(hasher.finalize())
+  }
 
   fn extract_example_zip(
     target: &Path,
@@ -41,17 +57,17 @@ mod parallel_merge {
     /* Generate the input to a MedusaZip by associating the (relative) file names
      * from the zip to their (absolute) extracted output paths. */
     let input_files: Vec<lib::FileSource> = zip_archive.file_names()
-    /* Ignore any directories, which are not represented in FileSource structs. */
-    .filter(|f| !f.ends_with('/'))
-    .map(|f| {
-      let absolute_path = extract_dir.path().join(f);
-      assert!(fs::metadata(&absolute_path).unwrap().is_file());
-      let name = lib::EntryName::validate(f.to_string()).unwrap();
-      lib::FileSource {
-        name,
-        source: absolute_path,
-      }
-    }).collect();
+      /* Ignore any directories, which are not represented in FileSource structs. */
+      .filter(|f| !f.ends_with('/'))
+      .map(|f| {
+        let absolute_path = extract_dir.path().join(f);
+        assert!(fs::metadata(&absolute_path).unwrap().is_file());
+        let name = lib::EntryName::validate(f.to_string()).unwrap();
+        lib::FileSource {
+          name,
+          source: absolute_path,
+        }
+      }).collect();
 
     Ok((input_files, extract_dir))
   }
@@ -189,27 +205,27 @@ mod parallel_merge {
         (0.05, (0.07, 0.2)),
         SamplingMode::Auto,
       ),
-      (
-        /* This file is 9.7M. */
-        "Babel-2.12.1-py3-none-any.whl",
-        (1000, (80, 10)),
-        (
-          Duration::from_secs(3),
-          (Duration::from_secs(35), Duration::from_secs(35)),
-        ),
-        /* 50% variation is within noise given our low sample size for the slow sync tests. */
-        (0.1, (0.2, 0.5)),
-        SamplingMode::Flat,
-      ),
-      (
-        /* This file is 461M, or about half a gigabyte, with multiple individual very
-         * large binary files. */
-        "tensorflow_gpu-2.5.3-cp38-cp38-manylinux2010_x86_64.whl",
-        (100, (1, 1)),
-        (Duration::from_secs(10), (Duration::ZERO, Duration::ZERO)),
-        (0.1, (0.0, 0.0)),
-        SamplingMode::Flat,
-      ),
+      /* ( */
+      /*   /\* This file is 9.7M. *\/ */
+      /*   "Babel-2.12.1-py3-none-any.whl", */
+      /*   (1000, (80, 10)), */
+      /*   ( */
+      /*     Duration::from_secs(3), */
+      /*     (Duration::from_secs(35), Duration::from_secs(35)), */
+      /*   ), */
+      /*   /\* 50% variation is within noise given our low sample size for the slow sync tests. *\/ */
+      /*   (0.1, (0.2, 0.5)), */
+      /*   SamplingMode::Flat, */
+      /* ), */
+      /* ( */
+      /*   /\* This file is 461M, or about half a gigabyte, with multiple individual very */
+      /*    * large binary files. *\/ */
+      /*   "tensorflow_gpu-2.5.3-cp38-cp38-manylinux2010_x86_64.whl", */
+      /*   (100, (1, 1)), */
+      /*   (Duration::from_secs(10), (Duration::ZERO, Duration::ZERO)), */
+      /*   (0.1, (0.0, 0.0)), */
+      /*   SamplingMode::Flat, */
+      /* ), */
     ]
     .iter()
     {
@@ -224,12 +240,21 @@ mod parallel_merge {
         zip_len
       );
 
-      group.throughput(Throughput::Bytes(zip_len as u64));
+      group
+        .sampling_mode(*mode)
+        .throughput(Throughput::Bytes(zip_len as u64));
 
       /* FIXME: assigning `_` to the second arg of this tuple will destroy the
        * extract dir, which is only a silent error producing an empty file!!!
        * AWFUL UX!!! */
       let (input_files, extracted_dir) = extract_example_zip(&target).unwrap();
+
+      /* Compare the outputs of the two types of crawls. */
+      let medusa_crawl_result = rt
+        .block_on(execute_medusa_crawl(extracted_dir.path()))
+        .unwrap();
+      let sync_crawl_result = execute_basic_crawl(extracted_dir.path()).unwrap();
+      assert_eq!(medusa_crawl_result, sync_crawl_result);
 
       /* Run the parallel filesystem crawl. */
       group
@@ -248,41 +273,49 @@ mod parallel_merge {
         BenchmarkId::new(&id, "<sync crawling the extracted contents>"),
         |b| b.iter(|| execute_basic_crawl(extracted_dir.path())),
       );
-      /* Compare the outputs of the two crawls. */
-      let medusa_crawl_result = rt
-        .block_on(execute_medusa_crawl(extracted_dir.path()))
-        .unwrap();
-      let sync_crawl_result = execute_basic_crawl(extracted_dir.path()).unwrap();
-      assert_eq!(medusa_crawl_result, sync_crawl_result);
 
       if env::var_os("ONLY_CRAWL").is_some() {
         continue;
       }
 
-      group.sampling_mode(*mode);
-
       /* Run the parallel implementation. */
-      let parallelism = lib::zip::Parallelism::ParallelMerge;
       group
         .sample_size(*n_p)
         .measurement_time(*t_p)
         .noise_threshold(*noise_p);
+      let parallelism = lib::zip::Parallelism::ParallelMerge;
       group.bench_with_input(BenchmarkId::new(&id, parallelism), &parallelism, |b, p| {
         b.to_async(&rt)
           .iter(|| execute_medusa_zip(input_files.clone(), *p));
       });
+      let mut canonical_parallel_output = rt.block_on(
+        execute_medusa_zip(input_files.clone(), parallelism)
+      ).unwrap().into_inner();
+      let canonical_parallel_output = hash_file_bytes(&mut canonical_parallel_output).unwrap();
 
       /* Run the sync implementation. */
       if env::var_os("NO_SYNC").is_none() {
-        let parallelism = lib::zip::Parallelism::Synchronous;
         group
           .sample_size(*n_sync)
           .measurement_time(*t_sync)
           .noise_threshold(*noise_sync);
+        /* FIXME: this takes >3x as long as sync zip! */
+        /* Run the async version, but without any fancy queueing. */
+        let parallelism = lib::zip::Parallelism::Synchronous;
         group.bench_with_input(BenchmarkId::new(&id, parallelism), &parallelism, |b, p| {
           b.to_async(&rt)
             .iter(|| execute_medusa_zip(input_files.clone(), *p));
         });
+
+        let canonical_sync = rt.block_on(
+          execute_medusa_zip(input_files.clone(), parallelism)
+        ).unwrap();
+        let mut canonical_sync_filenames: Vec<_> = canonical_sync.file_names()
+          .map(|s| s.to_string()).collect();
+        canonical_sync_filenames.par_sort_unstable();
+        let mut canonical_sync = canonical_sync.into_inner();
+        let canonical_sync = hash_file_bytes(&mut canonical_sync).unwrap();
+        assert_eq!(canonical_parallel_output, canonical_sync);
 
         /* Run the implementation based only off of the zip crate. We reuse the same
          * sampling presets under the assumption it will have a very similar
@@ -290,6 +323,20 @@ mod parallel_merge {
         group.bench_function(BenchmarkId::new(&id, "<sync zip crate>"), |b| {
           b.iter(|| execute_basic_zip(input_files.clone()));
         });
+
+        let canonical_basic = execute_basic_zip(input_files.clone()).unwrap();
+        /* We can't match our medusa zip file byte-for-byte against the zip crate version, but we
+         * can at least check that they have the same filenames. */
+        let mut canonical_basic_filenames: Vec<_> = canonical_basic.file_names()
+          .map(|s| s.to_string()).collect();
+        canonical_basic_filenames.par_sort_unstable();
+        /* NB: the zip crate basic impl does not introduce directory entries, so we have to remove
+         * them here from the medusa zip to check equality. */
+        let canonical_sync_filenames: Vec<_> = canonical_sync_filenames
+          .into_par_iter()
+          .filter(|name| !name.ends_with('/'))
+          .collect();
+        assert_eq!(canonical_sync_filenames, canonical_basic_filenames);
       }
     }
 
