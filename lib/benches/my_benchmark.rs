@@ -20,7 +20,7 @@ mod parallel_merge {
   use tokio::runtime::Runtime;
   use zip::{self, result::ZipError};
 
-  use std::{fs, path::Path, time::Duration};
+  use std::{env, fs, path::Path, time::Duration};
 
   fn extract_example_zip(
     target: &Path,
@@ -98,14 +98,14 @@ mod parallel_merge {
         "Pygments-2.16.1-py3-none-any.whl",
         (100, 100),
         (Duration::from_secs(8), Duration::from_secs(24)),
-        (0.1, 0.2),
+        (0.07, 0.2),
         SamplingMode::Auto,
       ),
       (
         /* This file is 9.7M. */
         "Babel-2.12.1-py3-none-any.whl",
         (80, 10),
-        (Duration::from_secs(24), Duration::from_secs(35)),
+        (Duration::from_secs(35), Duration::from_secs(35)),
         (0.2, 0.3),
         SamplingMode::Flat,
       ),
@@ -147,15 +147,17 @@ mod parallel_merge {
       });
 
       /* Run the sync implementation. */
-      let parallelism = lib::zip::Parallelism::Synchronous;
-      group
-        .sample_size(*n_sync)
-        .measurement_time(*t_sync)
-        .noise_threshold(*noise_sync);
-      group.bench_with_input(BenchmarkId::new(&id, parallelism), &parallelism, |b, p| {
-        b.to_async(&rt)
-          .iter(|| create_basic_zip(input_files.clone(), *p));
-      });
+      if env::var_os("NO_SYNC").is_none() {
+        let parallelism = lib::zip::Parallelism::Synchronous;
+        group
+          .sample_size(*n_sync)
+          .measurement_time(*t_sync)
+          .noise_threshold(*noise_sync);
+        group.bench_with_input(BenchmarkId::new(&id, parallelism), &parallelism, |b, p| {
+          b.to_async(&rt)
+            .iter(|| create_basic_zip(input_files.clone(), *p));
+        });
+      }
     }
 
     group.finish();

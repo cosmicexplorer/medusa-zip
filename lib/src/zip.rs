@@ -602,9 +602,9 @@ pub struct MedusaZip {
 }
 
 /* TODO: make these configurable!!! */
-const INTERMEDIATE_CHUNK_SIZE: usize = 2000;
-const MAX_PARALLEL_INTERMEDIATES: usize = 12;
-const PER_INTERMEDIATE_FILE_IO_QUEUE_LENGTH: usize = 20;
+const INTERMEDIATE_CHUNK_SIZE: usize = 10_000;
+const MAX_PARALLEL_INTERMEDIATES: usize = 20;
+const PER_INTERMEDIATE_FILE_IO_QUEUE_LENGTH: usize = 50;
 const INTERMEDIATE_OUTPUT_SPOOL_THRESHOLD: usize = 20_000;
 
 pub struct ZipOptionsInitializers {
