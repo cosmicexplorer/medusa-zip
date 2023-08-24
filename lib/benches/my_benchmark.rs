@@ -202,21 +202,21 @@ mod parallel_merge {
           Duration::from_secs(5),
           (Duration::from_secs(8), Duration::from_secs(24)),
         ),
-        (0.05, (0.07, 0.2)),
+        (0.15, (0.07, 0.2)),
         SamplingMode::Auto,
       ),
-      /* ( */
-      /*   /\* This file is 9.7M. *\/ */
-      /*   "Babel-2.12.1-py3-none-any.whl", */
-      /*   (1000, (80, 10)), */
-      /*   ( */
-      /*     Duration::from_secs(3), */
-      /*     (Duration::from_secs(35), Duration::from_secs(35)), */
-      /*   ), */
-      /*   /\* 50% variation is within noise given our low sample size for the slow sync tests. *\/ */
-      /*   (0.1, (0.2, 0.5)), */
-      /*   SamplingMode::Flat, */
-      /* ), */
+      (
+        /* This file is 9.7M. */
+        "Babel-2.12.1-py3-none-any.whl",
+        (1000, (80, 10)),
+        (
+          Duration::from_secs(3),
+          (Duration::from_secs(35), Duration::from_secs(35)),
+        ),
+        /* 50% variation is within noise given our low sample size for the slow sync tests. */
+        (0.2, (0.2, 0.5)),
+        SamplingMode::Flat,
+      ),
       /* ( */
       /*   /\* This file is 461M, or about half a gigabyte, with multiple individual very */
       /*    * large binary files. *\/ */
