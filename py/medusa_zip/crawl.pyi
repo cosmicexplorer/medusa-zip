@@ -15,6 +15,7 @@ class ResolvedPath:
   def __init__(self, *, unresolved_path: Union[str, Path], resolved_path: Union[str, Path]) -> None:
     ...
 
+  # FIXME: these also appear to be strings at runtime!
   @property
   def unresolved_path(self) -> Path: ...
   @property
