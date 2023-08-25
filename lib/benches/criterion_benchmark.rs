@@ -17,6 +17,7 @@ mod parallel_merge {
   use libmedusa_zip as lib;
 
   use rayon::prelude::*;
+  use tempfile;
   use tokio::runtime::Runtime;
 
   use std::{env, path::Path, time::Duration};
@@ -110,7 +111,9 @@ mod parallel_merge {
       /* FIXME: assigning `_` to the second arg of this tuple will destroy the
        * extract dir, which is only a silent error producing an empty file!!!
        * AWFUL UX!!! */
-      let (input_files, extracted_dir) = lib::bench_utils::extract_example_zip(&target).unwrap();
+      let extracted_dir = tempfile::tempdir().unwrap();
+      let input_files =
+        lib::bench_utils::extract_example_zip(&target, extracted_dir.path()).unwrap();
 
       /* Compare the outputs of the two types of crawls. */
       let medusa_crawl_result = rt

@@ -40,19 +40,14 @@ pub fn hash_file_bytes(f: &mut fs::File) -> Result<GenericArray<u8, U32>, io::Er
 }
 
 
-pub fn extract_example_zip(
-  target: &Path,
-) -> Result<(Vec<FileSource>, tempfile::TempDir), ZipError> {
-  /* Create the temp dir to extract into. */
-  let extract_dir = tempfile::tempdir()?;
-
+pub fn extract_example_zip(target: &Path, extract_dir: &Path) -> Result<Vec<FileSource>, ZipError> {
   /* Load the zip archive from file. */
   let handle = fs::OpenOptions::new().read(true).open(target)?;
   let mut zip_archive = zip::ZipArchive::new(handle)?;
 
   /* Extract the zip's contents. */
   /* FIXME: make a parallelized zip extractor too! */
-  zip_archive.extract(extract_dir.path())?;
+  zip_archive.extract(extract_dir)?;
 
   /* Generate the input to a MedusaZip by associating the (relative) file names
    * from the zip to their (absolute) extracted output paths. */
@@ -60,7 +55,7 @@ pub fn extract_example_zip(
       /* Ignore any directories, which are not represented in FileSource structs. */
       .filter(|f| !f.ends_with('/'))
       .map(|f| {
-        let absolute_path = extract_dir.path().join(f);
+        let absolute_path = extract_dir.join(f);
         assert!(fs::metadata(&absolute_path).unwrap().is_file());
         let name = EntryName::validate(f.to_string()).unwrap();
         FileSource {
@@ -69,7 +64,7 @@ pub fn extract_example_zip(
         }
       }).collect();
 
-  Ok((input_files, extract_dir))
+  Ok(input_files)
 }
 
 

@@ -36,13 +36,18 @@ zip.workspace           = true
 criterion               = { version = "0.5", features = ["async_tokio"] }
 iai                     = "0.1"
 tokio                   = { workspace = true, features = ["rt-multi-thread"] }
+uuid                    = { version = "1.4.1", features = ["v4", "fast-rng"] }
 
 [features]
-bench-utils = ["sha3", "generic-array", "walkdir"]
-default = []
+bench-utils             = ["sha3", "generic-array", "walkdir"]
+default                 = []
 
 [[bench]]
 name                    = "criterion_benchmark"
+harness                 = false
+
+[[bench]]
+name                    = "iai_benchmark"
 harness                 = false
 
 # Use nicer docs features for docs.rs. See https://users.rust-lang.org/t/how-to-test-a-package-metadata-docs-rs-setting/53818.
