@@ -16,149 +16,12 @@ mod parallel_merge {
 
   use libmedusa_zip as lib;
 
-  use generic_array::{typenum::U32, GenericArray};
   use rayon::prelude::*;
-  use sha3::{Digest, Sha3_256};
-  use tempfile;
   use tokio::runtime::Runtime;
-  use walkdir::WalkDir;
-  use zip::{self, result::ZipError};
 
-  use std::{env, fs, io, path::Path, time::Duration};
+  use std::{env, path::Path, time::Duration};
 
-  fn hash_file_bytes(f: &mut fs::File) -> Result<GenericArray<u8, U32>, io::Error> {
-    use io::{Read, Seek};
-
-    f.rewind()?;
-
-    let mut hasher = Sha3_256::new();
-    let mut buf: Vec<u8> = Vec::new();
-    /* TODO: how to hash in chunks at a time? */
-    f.read_to_end(&mut buf)?;
-    hasher.update(buf);
-
-    Ok(hasher.finalize())
-  }
-
-  fn extract_example_zip(
-    target: &Path,
-  ) -> Result<(Vec<lib::FileSource>, tempfile::TempDir), ZipError> {
-    /* Create the temp dir to extract into. */
-    let extract_dir = tempfile::tempdir()?;
-
-    /* Load the zip archive from file. */
-    let handle = fs::OpenOptions::new().read(true).open(target)?;
-    let mut zip_archive = zip::ZipArchive::new(handle)?;
-
-    /* Extract the zip's contents. */
-    /* FIXME: make a parallelized zip extractor too! */
-    zip_archive.extract(extract_dir.path())?;
-
-    /* Generate the input to a MedusaZip by associating the (relative) file names
-     * from the zip to their (absolute) extracted output paths. */
-    let input_files: Vec<lib::FileSource> = zip_archive.file_names()
-      /* Ignore any directories, which are not represented in FileSource structs. */
-      .filter(|f| !f.ends_with('/'))
-      .map(|f| {
-        let absolute_path = extract_dir.path().join(f);
-        assert!(fs::metadata(&absolute_path).unwrap().is_file());
-        let name = lib::EntryName::validate(f.to_string()).unwrap();
-        lib::FileSource {
-          name,
-          source: absolute_path,
-        }
-      }).collect();
-
-    Ok((input_files, extract_dir))
-  }
-
-  async fn execute_medusa_crawl(
-    extracted_dir: &Path,
-  ) -> Result<lib::crawl::CrawlResult, lib::crawl::MedusaCrawlError> {
-    let ignores = lib::crawl::Ignores::default();
-    let crawl_spec = lib::crawl::MedusaCrawl::for_single_dir(extracted_dir.to_path_buf(), ignores);
-    let mut crawl_result = crawl_spec.crawl_paths().await?;
-    /* This gets us something deterministic that  we can compare to the output of
-     * execute_basic_crawl(). */
-    crawl_result.real_file_paths.par_sort_by_cached_key(
-      |lib::crawl::ResolvedPath {
-         unresolved_path, ..
-       }| unresolved_path.clone(),
-    );
-    Ok(crawl_result)
-  }
-
-  fn execute_basic_crawl(extracted_dir: &Path) -> Result<lib::crawl::CrawlResult, io::Error> {
-    let mut real_file_paths: Vec<lib::crawl::ResolvedPath> = Vec::new();
-    for entry in WalkDir::new(extracted_dir)
-      .follow_links(false)
-      .sort_by_file_name()
-    {
-      let entry = entry?;
-      if entry.file_type().is_dir() {
-        continue;
-      }
-
-      let unresolved_path = entry
-        .path()
-        .strip_prefix(extracted_dir)
-        .unwrap()
-        .to_path_buf();
-      let rp = if entry.path_is_symlink() {
-        lib::crawl::ResolvedPath {
-          unresolved_path,
-          resolved_path: fs::read_link(entry.path())?,
-        }
-      } else {
-        lib::crawl::ResolvedPath {
-          unresolved_path,
-          resolved_path: entry.path().to_path_buf(),
-        }
-      };
-      real_file_paths.push(rp);
-    }
-
-    let mut ret = lib::crawl::CrawlResult { real_file_paths };
-    ret.clean_up_for_export(extracted_dir);
-    Ok(ret)
-  }
-
-  async fn execute_medusa_zip(
-    input_files: Vec<lib::FileSource>,
-    parallelism: lib::zip::Parallelism,
-  ) -> Result<zip::ZipArchive<fs::File>, lib::zip::MedusaZipError> {
-    let zip_spec = lib::zip::MedusaZip {
-      input_files,
-      zip_options: lib::zip::ZipOutputOptions {
-        mtime_behavior: lib::zip::ModifiedTimeBehavior::Explicit(zip::DateTime::zero()),
-        compression_options: lib::zip::CompressionStrategy::Deflated(Some(6)),
-      },
-      modifications: lib::zip::EntryModifications::default(),
-      parallelism,
-    };
-    let output_zip =
-      lib::destination::OutputWrapper::wrap(zip::ZipWriter::new(tempfile::tempfile()?));
-    let mut output_zip = zip_spec.zip(output_zip).await?.reclaim();
-    Ok(output_zip.finish_into_readable()?)
-  }
-
-  fn execute_basic_zip(
-    input_files: Vec<lib::FileSource>,
-  ) -> Result<zip::ZipArchive<fs::File>, ZipError> {
-    let mut output_zip = zip::ZipWriter::new(tempfile::tempfile()?);
-
-    let options = zip::write::FileOptions::default()
-      .compression_method(zip::CompressionMethod::Deflated)
-      .compression_level(Some(6))
-      .last_modified_time(zip::DateTime::zero());
-    for lib::FileSource { name, source } in input_files.into_iter() {
-      let mut in_f = fs::OpenOptions::new().read(true).open(source)?;
-      output_zip.start_file(name.into_string(), options)?;
-      io::copy(&mut in_f, &mut output_zip)?;
-    }
-
-    Ok(output_zip.finish_into_readable()?)
-  }
+  /* #[static_init::dynamic] */
 
   pub fn bench_zips(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
@@ -205,18 +68,18 @@ mod parallel_merge {
         (0.15, (0.07, 0.2)),
         SamplingMode::Auto,
       ),
-      (
-        /* This file is 9.7M. */
-        "Babel-2.12.1-py3-none-any.whl",
-        (1000, (80, 10)),
-        (
-          Duration::from_secs(3),
-          (Duration::from_secs(35), Duration::from_secs(35)),
-        ),
-        /* 50% variation is within noise given our low sample size for the slow sync tests. */
-        (0.2, (0.2, 0.5)),
-        SamplingMode::Flat,
-      ),
+      /* ( */
+      /*   /\* This file is 9.7M. *\/ */
+      /*   "Babel-2.12.1-py3-none-any.whl", */
+      /*   (1000, (80, 10)), */
+      /*   ( */
+      /*     Duration::from_secs(3), */
+      /*     (Duration::from_secs(35), Duration::from_secs(35)), */
+      /*   ), */
+      /*   /\* 50% variation is within noise given our low sample size for the slow sync tests. *\/ */
+      /*   (0.2, (0.2, 0.5)), */
+      /*   SamplingMode::Flat, */
+      /* ), */
       /* ( */
       /*   /\* This file is 461M, or about half a gigabyte, with multiple individual very */
       /*    * large binary files. *\/ */
@@ -247,13 +110,13 @@ mod parallel_merge {
       /* FIXME: assigning `_` to the second arg of this tuple will destroy the
        * extract dir, which is only a silent error producing an empty file!!!
        * AWFUL UX!!! */
-      let (input_files, extracted_dir) = extract_example_zip(&target).unwrap();
+      let (input_files, extracted_dir) = lib::bench_utils::extract_example_zip(&target).unwrap();
 
       /* Compare the outputs of the two types of crawls. */
       let medusa_crawl_result = rt
-        .block_on(execute_medusa_crawl(extracted_dir.path()))
+        .block_on(lib::bench_utils::execute_medusa_crawl(extracted_dir.path()))
         .unwrap();
-      let sync_crawl_result = execute_basic_crawl(extracted_dir.path()).unwrap();
+      let sync_crawl_result = lib::bench_utils::execute_basic_crawl(extracted_dir.path()).unwrap();
       assert_eq!(medusa_crawl_result, sync_crawl_result);
 
       /* Run the parallel filesystem crawl. */
@@ -265,13 +128,13 @@ mod parallel_merge {
         BenchmarkId::new(&id, "<parallel crawling the extracted contents>"),
         |b| {
           b.to_async(&rt)
-            .iter(|| execute_medusa_crawl(extracted_dir.path()))
+            .iter(|| lib::bench_utils::execute_medusa_crawl(extracted_dir.path()))
         },
       );
       /* Run the sync filesystem crawl. */
       group.bench_function(
         BenchmarkId::new(&id, "<sync crawling the extracted contents>"),
-        |b| b.iter(|| execute_basic_crawl(extracted_dir.path())),
+        |b| b.iter(|| lib::bench_utils::execute_basic_crawl(extracted_dir.path())),
       );
 
       if env::var_os("ONLY_CRAWL").is_some() {
@@ -286,12 +149,13 @@ mod parallel_merge {
       let parallelism = lib::zip::Parallelism::ParallelMerge;
       group.bench_with_input(BenchmarkId::new(&id, parallelism), &parallelism, |b, p| {
         b.to_async(&rt)
-          .iter(|| execute_medusa_zip(input_files.clone(), *p));
+          .iter(|| lib::bench_utils::execute_medusa_zip(input_files.clone(), *p));
       });
       let mut canonical_parallel_output = rt.block_on(
-        execute_medusa_zip(input_files.clone(), parallelism)
+        lib::bench_utils::execute_medusa_zip(input_files.clone(), parallelism)
       ).unwrap().into_inner();
-      let canonical_parallel_output = hash_file_bytes(&mut canonical_parallel_output).unwrap();
+      let canonical_parallel_output =
+        lib::bench_utils::hash_file_bytes(&mut canonical_parallel_output).unwrap();
 
       /* Run the sync implementation. */
       if env::var_os("NO_SYNC").is_none() {
@@ -304,27 +168,28 @@ mod parallel_merge {
         let parallelism = lib::zip::Parallelism::Synchronous;
         group.bench_with_input(BenchmarkId::new(&id, parallelism), &parallelism, |b, p| {
           b.to_async(&rt)
-            .iter(|| execute_medusa_zip(input_files.clone(), *p));
+            .iter(|| lib::bench_utils::execute_medusa_zip(input_files.clone(), *p));
         });
 
         let canonical_sync = rt.block_on(
-          execute_medusa_zip(input_files.clone(), parallelism)
+          lib::bench_utils::execute_medusa_zip(input_files.clone(), parallelism)
         ).unwrap();
         let mut canonical_sync_filenames: Vec<_> = canonical_sync.file_names()
           .map(|s| s.to_string()).collect();
         canonical_sync_filenames.par_sort_unstable();
         let mut canonical_sync = canonical_sync.into_inner();
-        let canonical_sync = hash_file_bytes(&mut canonical_sync).unwrap();
+        let canonical_sync =
+          lib::bench_utils::hash_file_bytes(&mut canonical_sync).unwrap();
         assert_eq!(canonical_parallel_output, canonical_sync);
 
         /* Run the implementation based only off of the zip crate. We reuse the same
          * sampling presets under the assumption it will have a very similar
          * runtime. */
         group.bench_function(BenchmarkId::new(&id, "<sync zip crate>"), |b| {
-          b.iter(|| execute_basic_zip(input_files.clone()));
+          b.iter(|| lib::bench_utils::execute_basic_zip(input_files.clone()));
         });
 
-        let canonical_basic = execute_basic_zip(input_files.clone()).unwrap();
+        let canonical_basic = lib::bench_utils::execute_basic_zip(input_files.clone()).unwrap();
         /* We can't match our medusa zip file byte-for-byte against the zip crate version, but we
          * can at least check that they have the same filenames. */
         let mut canonical_basic_filenames: Vec<_> = canonical_basic.file_names()

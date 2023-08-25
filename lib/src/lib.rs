@@ -128,7 +128,8 @@ impl EntryName {
     self.components[range].iter().map(|r| &self.name[r.clone()])
   }
 
-  /* FIXME: use Cow over String here (need to remove string ref from error cases)! */
+  /* FIXME: use Cow over String here (need to remove string ref from error
+   * cases)! */
   pub fn validate(name: String) -> Result<Self, MedusaNameFormatError> {
     if name.is_empty() {
       Err(MedusaNameFormatError::NameIsEmpty)
@@ -186,6 +187,9 @@ pub mod crawl;
 pub mod zip;
 
 pub mod merge;
+
+#[cfg(feature = "bench-utils")]
+pub mod bench_utils;
 
 /* FIXME: add tests! */
 /* #[cfg(test)] */
