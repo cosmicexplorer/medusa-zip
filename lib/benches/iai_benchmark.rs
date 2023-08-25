@@ -115,7 +115,41 @@ mod parallel_merge {
       .block_on(lib::bench_utils::execute_medusa_crawl(&keras_extracted))
       .unwrap()
   }
-}
-use parallel_merge::{keras_medusa_crawl, keras_sync_crawl, setup_tokio_runtime};
 
-iai::setup_main!(setup_tokio_runtime : keras_sync_crawl, keras_medusa_crawl);
+  pub fn pygments_sync_crawl() -> lib::crawl::CrawlResult {
+    let (_, pygments_extracted) = unsafe { &*PYGMENTS_EXTRACTED };
+    lib::bench_utils::execute_basic_crawl(&pygments_extracted).unwrap()
+  }
+
+  pub fn pygments_medusa_crawl() -> lib::crawl::CrawlResult {
+    let (_, pygments_extracted) = unsafe { &*PYGMENTS_EXTRACTED };
+    let runtime = RUNTIME.wait();
+    runtime
+      .block_on(lib::bench_utils::execute_medusa_crawl(&pygments_extracted))
+      .unwrap()
+  }
+
+  pub fn babel_sync_crawl() -> lib::crawl::CrawlResult {
+    let (_, babel_extracted) = unsafe { &*BABEL_EXTRACTED };
+    lib::bench_utils::execute_basic_crawl(&babel_extracted).unwrap()
+  }
+
+  pub fn babel_medusa_crawl() -> lib::crawl::CrawlResult {
+    let (_, babel_extracted) = unsafe { &*BABEL_EXTRACTED };
+    let runtime = RUNTIME.wait();
+    runtime
+      .block_on(lib::bench_utils::execute_medusa_crawl(&babel_extracted))
+      .unwrap()
+  }
+}
+use parallel_merge::{
+  babel_medusa_crawl, babel_sync_crawl, keras_medusa_crawl, keras_sync_crawl,
+  pygments_medusa_crawl, pygments_sync_crawl, setup_tokio_runtime,
+};
+
+iai::setup_main!(
+  setup_tokio_runtime :
+  keras_sync_crawl, keras_medusa_crawl,
+  pygments_sync_crawl, pygments_medusa_crawl,
+  babel_sync_crawl, babel_medusa_crawl,
+);
