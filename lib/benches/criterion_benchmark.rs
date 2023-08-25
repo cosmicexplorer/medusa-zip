@@ -68,18 +68,18 @@ mod parallel_merge {
         (0.15, (0.07, 0.2)),
         SamplingMode::Auto,
       ),
-      /* ( */
-      /*   /\* This file is 9.7M. *\/ */
-      /*   "Babel-2.12.1-py3-none-any.whl", */
-      /*   (1000, (80, 10)), */
-      /*   ( */
-      /*     Duration::from_secs(3), */
-      /*     (Duration::from_secs(35), Duration::from_secs(35)), */
-      /*   ), */
-      /*   /\* 50% variation is within noise given our low sample size for the slow sync tests. *\/ */
-      /*   (0.2, (0.2, 0.5)), */
-      /*   SamplingMode::Flat, */
-      /* ), */
+      (
+        /* This file is 9.7M. */
+        "Babel-2.12.1-py3-none-any.whl",
+        (1000, (80, 10)),
+        (
+          Duration::from_secs(3),
+          (Duration::from_secs(35), Duration::from_secs(35)),
+        ),
+        /* 50% variation is within noise given our low sample size for the slow sync tests. */
+        (0.2, (0.2, 0.5)),
+        SamplingMode::Flat,
+      ),
       /* ( */
       /*   /\* This file is 461M, or about half a gigabyte, with multiple individual very */
       /*    * large binary files. *\/ */
@@ -151,9 +151,13 @@ mod parallel_merge {
         b.to_async(&rt)
           .iter(|| lib::bench_utils::execute_medusa_zip(input_files.clone(), *p));
       });
-      let mut canonical_parallel_output = rt.block_on(
-        lib::bench_utils::execute_medusa_zip(input_files.clone(), parallelism)
-      ).unwrap().into_inner();
+      let mut canonical_parallel_output = rt
+        .block_on(lib::bench_utils::execute_medusa_zip(
+          input_files.clone(),
+          parallelism,
+        ))
+        .unwrap()
+        .into_inner();
       let canonical_parallel_output =
         lib::bench_utils::hash_file_bytes(&mut canonical_parallel_output).unwrap();
 
@@ -171,15 +175,17 @@ mod parallel_merge {
             .iter(|| lib::bench_utils::execute_medusa_zip(input_files.clone(), *p));
         });
 
-        let canonical_sync = rt.block_on(
-          lib::bench_utils::execute_medusa_zip(input_files.clone(), parallelism)
-        ).unwrap();
-        let mut canonical_sync_filenames: Vec<_> = canonical_sync.file_names()
-          .map(|s| s.to_string()).collect();
+        let canonical_sync = rt
+          .block_on(lib::bench_utils::execute_medusa_zip(
+            input_files.clone(),
+            parallelism,
+          ))
+          .unwrap();
+        let mut canonical_sync_filenames: Vec<_> =
+          canonical_sync.file_names().map(|s| s.to_string()).collect();
         canonical_sync_filenames.par_sort_unstable();
         let mut canonical_sync = canonical_sync.into_inner();
-        let canonical_sync =
-          lib::bench_utils::hash_file_bytes(&mut canonical_sync).unwrap();
+        let canonical_sync = lib::bench_utils::hash_file_bytes(&mut canonical_sync).unwrap();
         assert_eq!(canonical_parallel_output, canonical_sync);
 
         /* Run the implementation based only off of the zip crate. We reuse the same
@@ -190,13 +196,16 @@ mod parallel_merge {
         });
 
         let canonical_basic = lib::bench_utils::execute_basic_zip(input_files.clone()).unwrap();
-        /* We can't match our medusa zip file byte-for-byte against the zip crate version, but we
-         * can at least check that they have the same filenames. */
-        let mut canonical_basic_filenames: Vec<_> = canonical_basic.file_names()
-          .map(|s| s.to_string()).collect();
+        /* We can't match our medusa zip file byte-for-byte against the zip crate
+         * version, but we can at least check that they have the same
+         * filenames. */
+        let mut canonical_basic_filenames: Vec<_> = canonical_basic
+          .file_names()
+          .map(|s| s.to_string())
+          .collect();
         canonical_basic_filenames.par_sort_unstable();
-        /* NB: the zip crate basic impl does not introduce directory entries, so we have to remove
-         * them here from the medusa zip to check equality. */
+        /* NB: the zip crate basic impl does not introduce directory entries, so we
+         * have to remove them here from the medusa zip to check equality. */
         let canonical_sync_filenames: Vec<_> = canonical_sync_filenames
           .into_par_iter()
           .filter(|name| !name.ends_with('/'))

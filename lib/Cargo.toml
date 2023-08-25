@@ -42,7 +42,7 @@ bench-utils = ["sha3", "generic-array", "walkdir"]
 default = []
 
 [[bench]]
-name                    = "my_benchmark"
+name                    = "criterion_benchmark"
 harness                 = false
 
 # Use nicer docs features for docs.rs. See https://users.rust-lang.org/t/how-to-test-a-package-metadata-docs-rs-setting/53818.
