@@ -70,6 +70,9 @@ mod parallel_merge {
 
   use libmedusa_zip as lib;
 
+  use once_cell::sync::OnceCell;
+  use tokio::runtime::Runtime;
+
   use std::path::PathBuf;
 
   #[static_init::dynamic(100, drop)]
@@ -96,18 +99,23 @@ mod parallel_merge {
     })
     .unwrap();
 
-  fn fibonacci(n: u64) -> u64 {
-    match n {
-      0 => 1,
-      1 => 1,
-      n => fibonacci(n - 1) + fibonacci(n - 2),
-    }
+  static RUNTIME: OnceCell<Runtime> = OnceCell::new();
+
+  pub fn setup_tokio_runtime() { RUNTIME.set(Runtime::new().unwrap()).unwrap(); }
+
+  pub fn keras_sync_crawl() -> lib::crawl::CrawlResult {
+    let (_, keras_extracted) = unsafe { &*KERAS_EXTRACTED };
+    lib::bench_utils::execute_basic_crawl(&keras_extracted).unwrap()
   }
 
-  pub fn iai_benchmark_short() -> u64 { fibonacci(iai::black_box(10)) }
-
-  pub fn iai_benchmark_long() -> u64 { fibonacci(iai::black_box(30)) }
+  pub fn keras_medusa_crawl() -> lib::crawl::CrawlResult {
+    let (_, keras_extracted) = unsafe { &*KERAS_EXTRACTED };
+    let runtime = RUNTIME.wait();
+    runtime
+      .block_on(lib::bench_utils::execute_medusa_crawl(&keras_extracted))
+      .unwrap()
+  }
 }
-use parallel_merge::{iai_benchmark_long, iai_benchmark_short};
+use parallel_merge::{keras_medusa_crawl, keras_sync_crawl, setup_tokio_runtime};
 
-iai::main!(iai_benchmark_short, iai_benchmark_long);
+iai::setup_main!(setup_tokio_runtime : keras_sync_crawl, keras_medusa_crawl);

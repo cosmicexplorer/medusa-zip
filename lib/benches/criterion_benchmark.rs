@@ -22,8 +22,6 @@ mod parallel_merge {
 
   use std::{env, path::Path, time::Duration};
 
-  /* #[static_init::dynamic] */
-
   pub fn bench_zips(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
 

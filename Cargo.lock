@@ -585,8 +585,10 @@ checksum = "443144c8cdadd93ebf52ddb4056d257f5b52c04d3c804e657d19eb73fc33668b"
 [[package]]
 name = "iai"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71a816c97c42258aa5834d07590b718b4c9a598944cd39a52dc25b351185d678"
+source = "git+https://github.com/cosmicexplorer/iai?rev=595aae8661ea3db2e72c115cd78176a052e0e167#595aae8661ea3db2e72c115cd78176a052e0e167"
+dependencies = [
+ "cfg-if",
+]
 
 [[package]]
 name = "indenter"
