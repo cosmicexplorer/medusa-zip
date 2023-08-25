@@ -585,7 +585,7 @@ checksum = "443144c8cdadd93ebf52ddb4056d257f5b52c04d3c804e657d19eb73fc33668b"
 [[package]]
 name = "iai"
 version = "0.1.1"
-source = "git+https://github.com/cosmicexplorer/iai?rev=595aae8661ea3db2e72c115cd78176a052e0e167#595aae8661ea3db2e72c115cd78176a052e0e167"
+source = "git+https://github.com/cosmicexplorer/iai?rev=098c3308d1113bd06e4ff88bd505f77655bf4b9a#098c3308d1113bd06e4ff88bd505f77655bf4b9a"
 dependencies = [
  "cfg-if",
 ]

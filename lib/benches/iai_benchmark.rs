@@ -72,84 +72,197 @@ mod parallel_merge {
 
   use once_cell::sync::OnceCell;
   use tokio::runtime::Runtime;
+  use zip;
 
-  use std::path::PathBuf;
+  use std::{fs, path::PathBuf};
 
   #[static_init::dynamic(100, drop)]
   static PARENT_EXTRACT_DIR: setup::DeleteDirOnDrop = setup::create_parent_temp_dir().unwrap();
-
-  #[static_init::dynamic(53)]
-  static KERAS_EXTRACTED: (Vec<lib::FileSource>, PathBuf) =
-    setup::extract_example("Keras-2.4.3-py2.py3-none-any.whl", unsafe {
-      &*PARENT_EXTRACT_DIR.as_ref()
-    })
-    .unwrap();
-
-  #[static_init::dynamic(52)]
-  static PYGMENTS_EXTRACTED: (Vec<lib::FileSource>, PathBuf) =
-    setup::extract_example("Pygments-2.16.1-py3-none-any.whl", unsafe {
-      &*PARENT_EXTRACT_DIR.as_ref()
-    })
-    .unwrap();
-
-  #[static_init::dynamic(51)]
-  static BABEL_EXTRACTED: (Vec<lib::FileSource>, PathBuf) =
-    setup::extract_example("Babel-2.12.1-py3-none-any.whl", unsafe {
-      &*PARENT_EXTRACT_DIR.as_ref()
-    })
-    .unwrap();
 
   static RUNTIME: OnceCell<Runtime> = OnceCell::new();
 
   pub fn setup_tokio_runtime() { RUNTIME.set(Runtime::new().unwrap()).unwrap(); }
 
-  pub fn keras_sync_crawl() -> lib::crawl::CrawlResult {
-    let (_, keras_extracted) = unsafe { &*KERAS_EXTRACTED };
-    lib::bench_utils::execute_basic_crawl(&keras_extracted).unwrap()
+  pub mod keras {
+    use super::*;
+
+    static KERAS_EXTRACTED: OnceCell<(Vec<lib::FileSource>, PathBuf)> = OnceCell::new();
+
+    pub fn setup_keras() {
+      KERAS_EXTRACTED
+        .set(
+          setup::extract_example("Keras-2.4.3-py2.py3-none-any.whl", unsafe {
+            &*PARENT_EXTRACT_DIR.as_ref()
+          })
+          .unwrap(),
+        )
+        .unwrap();
+    }
+
+    pub fn keras_sync_crawl() -> lib::crawl::CrawlResult {
+      let (_, keras_extracted) = KERAS_EXTRACTED.wait();
+      lib::bench_utils::execute_basic_crawl(&keras_extracted).unwrap()
+    }
+
+    pub fn keras_medusa_crawl() -> lib::crawl::CrawlResult {
+      let (_, keras_extracted) = KERAS_EXTRACTED.wait();
+      let runtime = RUNTIME.wait();
+      runtime
+        .block_on(lib::bench_utils::execute_medusa_crawl(&keras_extracted))
+        .unwrap()
+    }
+
+    pub fn keras_parallel_zip() -> zip::ZipArchive<fs::File> {
+      let (keras_files, _) = KERAS_EXTRACTED.wait();
+      let runtime = RUNTIME.wait();
+      runtime
+        .block_on(lib::bench_utils::execute_medusa_zip(
+          keras_files.clone(),
+          lib::zip::Parallelism::ParallelMerge,
+        ))
+        .unwrap()
+    }
+
+    pub fn keras_sync_zip() -> zip::ZipArchive<fs::File> {
+      let (keras_files, _) = KERAS_EXTRACTED.wait();
+      let runtime = RUNTIME.wait();
+      runtime
+        .block_on(lib::bench_utils::execute_medusa_zip(
+          keras_files.clone(),
+          lib::zip::Parallelism::Synchronous,
+        ))
+        .unwrap()
+    }
+
+    pub fn keras_basic_zip() -> zip::ZipArchive<fs::File> {
+      let (keras_files, _) = KERAS_EXTRACTED.wait();
+      lib::bench_utils::execute_basic_zip(keras_files.clone()).unwrap()
+    }
   }
 
-  pub fn keras_medusa_crawl() -> lib::crawl::CrawlResult {
-    let (_, keras_extracted) = unsafe { &*KERAS_EXTRACTED };
-    let runtime = RUNTIME.wait();
-    runtime
-      .block_on(lib::bench_utils::execute_medusa_crawl(&keras_extracted))
-      .unwrap()
+  pub mod pygments {
+    use super::*;
+
+    static PYGMENTS_EXTRACTED: OnceCell<(Vec<lib::FileSource>, PathBuf)> = OnceCell::new();
+
+    pub fn setup_pygments() {
+      PYGMENTS_EXTRACTED
+        .set(
+          setup::extract_example("Pygments-2.16.1-py3-none-any.whl", unsafe {
+            &*PARENT_EXTRACT_DIR.as_ref()
+          })
+          .unwrap(),
+        )
+        .unwrap();
+    }
+
+    pub fn pygments_sync_crawl() -> lib::crawl::CrawlResult {
+      let (_, pygments_extracted) = PYGMENTS_EXTRACTED.wait();
+      lib::bench_utils::execute_basic_crawl(&pygments_extracted).unwrap()
+    }
+
+    pub fn pygments_medusa_crawl() -> lib::crawl::CrawlResult {
+      let (_, pygments_extracted) = PYGMENTS_EXTRACTED.wait();
+      let runtime = RUNTIME.wait();
+      runtime
+        .block_on(lib::bench_utils::execute_medusa_crawl(&pygments_extracted))
+        .unwrap()
+    }
+
+
+    pub fn pygments_parallel_zip() -> zip::ZipArchive<fs::File> {
+      let (pygments_files, _) = PYGMENTS_EXTRACTED.wait();
+      let runtime = RUNTIME.wait();
+      runtime
+        .block_on(lib::bench_utils::execute_medusa_zip(
+          pygments_files.clone(),
+          lib::zip::Parallelism::ParallelMerge,
+        ))
+        .unwrap()
+    }
+
+    pub fn pygments_sync_zip() -> zip::ZipArchive<fs::File> {
+      let (pygments_files, _) = PYGMENTS_EXTRACTED.wait();
+      let runtime = RUNTIME.wait();
+      runtime
+        .block_on(lib::bench_utils::execute_medusa_zip(
+          pygments_files.clone(),
+          lib::zip::Parallelism::Synchronous,
+        ))
+        .unwrap()
+    }
+
+    pub fn pygments_basic_zip() -> zip::ZipArchive<fs::File> {
+      let (pygments_files, _) = PYGMENTS_EXTRACTED.wait();
+      lib::bench_utils::execute_basic_zip(pygments_files.clone()).unwrap()
+    }
   }
 
-  pub fn pygments_sync_crawl() -> lib::crawl::CrawlResult {
-    let (_, pygments_extracted) = unsafe { &*PYGMENTS_EXTRACTED };
-    lib::bench_utils::execute_basic_crawl(&pygments_extracted).unwrap()
-  }
+  pub mod babel {
+    use super::*;
 
-  pub fn pygments_medusa_crawl() -> lib::crawl::CrawlResult {
-    let (_, pygments_extracted) = unsafe { &*PYGMENTS_EXTRACTED };
-    let runtime = RUNTIME.wait();
-    runtime
-      .block_on(lib::bench_utils::execute_medusa_crawl(&pygments_extracted))
-      .unwrap()
-  }
+    static BABEL_EXTRACTED: OnceCell<(Vec<lib::FileSource>, PathBuf)> = OnceCell::new();
 
-  pub fn babel_sync_crawl() -> lib::crawl::CrawlResult {
-    let (_, babel_extracted) = unsafe { &*BABEL_EXTRACTED };
-    lib::bench_utils::execute_basic_crawl(&babel_extracted).unwrap()
-  }
+    pub fn setup_babel() {
+      BABEL_EXTRACTED
+        .set(
+          setup::extract_example("Babel-2.12.1-py3-none-any.whl", unsafe {
+            &*PARENT_EXTRACT_DIR.as_ref()
+          })
+          .unwrap(),
+        )
+        .unwrap();
+    }
 
-  pub fn babel_medusa_crawl() -> lib::crawl::CrawlResult {
-    let (_, babel_extracted) = unsafe { &*BABEL_EXTRACTED };
-    let runtime = RUNTIME.wait();
-    runtime
-      .block_on(lib::bench_utils::execute_medusa_crawl(&babel_extracted))
-      .unwrap()
+    pub fn babel_sync_crawl() -> lib::crawl::CrawlResult {
+      let (_, babel_extracted) = BABEL_EXTRACTED.wait();
+      lib::bench_utils::execute_basic_crawl(&babel_extracted).unwrap()
+    }
+
+    pub fn babel_medusa_crawl() -> lib::crawl::CrawlResult {
+      let (_, babel_extracted) = BABEL_EXTRACTED.wait();
+      let runtime = RUNTIME.wait();
+      runtime
+        .block_on(lib::bench_utils::execute_medusa_crawl(&babel_extracted))
+        .unwrap()
+    }
+
+    pub fn babel_parallel_zip() -> zip::ZipArchive<fs::File> {
+      let (babel_files, _) = BABEL_EXTRACTED.wait();
+      let runtime = RUNTIME.wait();
+      runtime
+        .block_on(lib::bench_utils::execute_medusa_zip(
+          babel_files.clone(),
+          lib::zip::Parallelism::ParallelMerge,
+        ))
+        .unwrap()
+    }
+
+    pub fn babel_sync_zip() -> zip::ZipArchive<fs::File> {
+      let (babel_files, _) = BABEL_EXTRACTED.wait();
+      let runtime = RUNTIME.wait();
+      runtime
+        .block_on(lib::bench_utils::execute_medusa_zip(
+          babel_files.clone(),
+          lib::zip::Parallelism::Synchronous,
+        ))
+        .unwrap()
+    }
+
+    pub fn babel_basic_zip() -> zip::ZipArchive<fs::File> {
+      let (babel_files, _) = BABEL_EXTRACTED.wait();
+      lib::bench_utils::execute_basic_zip(babel_files.clone()).unwrap()
+    }
   }
 }
-use parallel_merge::{
-  babel_medusa_crawl, babel_sync_crawl, keras_medusa_crawl, keras_sync_crawl,
-  pygments_medusa_crawl, pygments_sync_crawl, setup_tokio_runtime,
-};
+use parallel_merge::{babel::*, keras::*, pygments::*, setup_tokio_runtime};
 
 iai::setup_main!(
-  setup_tokio_runtime :
+  setup_tokio_runtime, setup_keras, setup_pygments, setup_babel, :
   keras_sync_crawl, keras_medusa_crawl,
+  keras_parallel_zip, keras_sync_zip, keras_basic_zip,
   pygments_sync_crawl, pygments_medusa_crawl,
+  pygments_parallel_zip, pygments_sync_zip, pygments_basic_zip,
   babel_sync_crawl, babel_medusa_crawl,
+  babel_parallel_zip, babel_sync_zip, babel_basic_zip,
 );

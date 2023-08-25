@@ -35,7 +35,7 @@ zip.workspace           = true
 [dev-dependencies]
 criterion               = { version = "0.5", features = ["async_tokio"] }
 # Need this for the setup_main! macro used to set up the tokio runtime.
-iai                     = { git = "https://github.com/cosmicexplorer/iai", rev = "595aae8661ea3db2e72c115cd78176a052e0e167" }
+iai                     = { git = "https://github.com/cosmicexplorer/iai", rev = "098c3308d1113bd06e4ff88bd505f77655bf4b9a" }
 tokio                   = { workspace = true, features = ["rt-multi-thread"] }
 uuid                    = { version = "1.4.1", features = ["v4", "fast-rng"] }
 
